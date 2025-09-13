@@ -1,7 +1,7 @@
 #!/bin/sh
 
 if [ $# -eq 0 ]; then
-    ./gradlew run
+    gradle run
 else
-    ./gradlew run --args="../$*"
+    gradle run --args="../$*"
 fi

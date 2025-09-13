@@ -20,21 +20,21 @@ add_to_path:
 
 install:
 	@cd $(DIST_DIR) && unzip -qo app.zip
-	@rm -rf ~/.cora
-	@mkdir -p ~/.cora
-	@mkdir -p ~/.cora/bin
-	@cp $(DIST_DIR)/app/bin/app ~/.cora/bin/cora
-	@cp -R $(DIST_DIR)/app/lib ~/.cora
-	@echo "Cora was successfully installed at ~/.cora."
+	@rm -rf $(DIST_DIR)/.cora
+	@mkdir -p $(DIST_DIR)/.cora
+	@mkdir -p $(DIST_DIR)/.cora/bin
+	@cp $(DIST_DIR)/app/bin/app $(DIST_DIR)/.cora/bin/cora
+	@cp -R $(DIST_DIR)/app/lib $(DIST_DIR)/.cora
+	@echo "Cora was successfully installed at $(DIST_DIR)/.cora."
 	@echo "If you would like to run it from anywhere, please add the following line to your bash profile:"
-	@echo 'export PATH="$$HOME/.cora/bin:$$PATH"'
+	@echo 'export PATH="$(DIST_DIR)/.cora/bin:$$PATH"'
 	@echo "For security reasons, this installation script will not change this file for you."
 
 uninstall:
 	@echo "Uninstalling cora..."
-	rm -rf ~/.cora
+	rm -rf $(DIST_DIR)/.cora
 	@echo "Done."
-	@echo "Note: if you have added ~/.cora/bin to your PATH variable, please remove it manually."
+	@echo "Note: if you have added $(DIST_DIR)/.cora/bin to your PATH variable, please remove it manually."
 
 run_exp_all:
 	cd ./cora_distribution && ./run_exp_all.sh
