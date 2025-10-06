@@ -6,8 +6,7 @@
   outputs =
     inputs:
     let
-      javaVersion = 24; # Change this value to update the whole stack
-
+      javaVersion = 21; # Change this value to update the whole stack
       supportedSystems = [
         "x86_64-linux"
         "aarch64-linux"
@@ -36,7 +35,7 @@
           inherit jdk;
           maven = prev.maven.override { jdk_headless = jdk; };
           gradle = prev.gradle.override { java = jdk; };
-          lombok = prev.lombok.override { inherit jdk; };
+          # lombok = prev.lombok.override { inherit jdk; };
         };
 
       devShells = forEachSupportedSystem (
@@ -46,7 +45,7 @@
 
             buildInputs = [
               pkgs.gradle
-              pkgs.jdk24
+              # pkgs."jdk${toString javaVersion}"
             ];
 
             NIX_LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
@@ -60,7 +59,8 @@
             packages = with pkgs; [
               gcc
               gradle
-              jdk24
+              # "jdk${toString javaVersion}"
+              jdk21
               maven
               ncurses
               patchelf

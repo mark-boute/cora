@@ -15,9 +15,9 @@ So you can build and run cora on linux or macOS (including M series macs).
 
 The build dependencies are listed below.
 
-- ``jdk >= 22.0.1``, we recommend [openjdk-21](https://openjdk.org/projects/jdk/21/). 
+- ``jdk >= 25``, we recommend [openjdk-21](https://openjdk.org/projects/jdk/21/). 
   - Make sure that jdk is properly installed and that ``JAVA_PATH`` is properly set.
-- ``gradle >= 8.8``
+- ``gradle >= 8.14``
   - Gradle will then download the following additional dependencies from the [maven](https://central.sonatype.com) repositories.
     - ``guava:33.2.1-jre``
     - ``junit:jupiter:5.10.2``
