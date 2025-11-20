@@ -21,6 +21,7 @@ import cora.termination.dependency_pairs.processors.*;
 import cora.termination.dependency_pairs.processors.graph.GraphProcessor;
 import cora.termination.dependency_pairs.processors.graph.ReachabilityProcessor;
 import cora.termination.dependency_pairs.processors.redpair.ReductionPairProcessor;
+import cora.termination.dependency_pairs.processors.tupleinterpretations.TupleInterpretationProcessor;
 
 public class FullDPFramework extends DPFramework {
   private Processor[] _processors;
@@ -37,14 +38,15 @@ public class FullDPFramework extends DPFramework {
   public FullDPFramework(TRS trs, boolean extraRules) {
     super(trs, false, extraRules);
     _processors = new Processor[] {
+        new TupleInterpretationProcessor(),
         new SplittingProcessor(),
-        new TheoryArgumentsProcessor(true),
-        new ReachabilityProcessor(),
-        new GraphProcessor(),
-        new SubtermProcessor(),
-        new TheoryArgumentsProcessor(false),
-        new IntegerMappingProcessor(),
-        new ReductionPairProcessor(new Horpo(false))
+        // new TheoryArgumentsProcessor(true),
+        // new ReachabilityProcessor(),
+        // new GraphProcessor(),
+        // new SubtermProcessor(),
+        // new TheoryArgumentsProcessor(false),
+        // new IntegerMappingProcessor(),
+        // new ReductionPairProcessor(new Horpo(false))
       };
     RESTARTLOOP = 3;
   }

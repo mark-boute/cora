@@ -55,6 +55,18 @@ public class SmtFactory {
     return new Addition(arg1, arg2);
   }
 
+  public static IntegerExpression createAddition(List<IntegerExpression> args) {
+    if (args == null) throw new NullStorageException("Addition", "argument list");
+    for (int i = 0; i < args.size(); i++) {
+      if (args.get(i) == null) {
+        throw new NullStorageException("Addition", "argument " + (i+1));
+      }
+    }
+    if (args.size() == 0) return new IValue(0);
+    if (args.size() == 1) return args.get(0);
+    return new Addition(args);
+  }
+
   public static IntegerExpression createMultiplication(int num, IntegerExpression arg) {
     if (arg == null) throw new NullStorageException("Multiplication", "non-constant argument");
     return new Multiplication(new IValue(num), arg);
@@ -64,6 +76,18 @@ public class SmtFactory {
     if (arg1 == null) throw new NullStorageException("Multiplication", "left argument");
     if (arg2 == null) throw new NullStorageException("Multiplication", "right argument");
     return new Multiplication(arg1, arg2);
+  }
+
+  public static IntegerExpression createMultiplication(List<IntegerExpression> args) {
+    if (args == null) throw new NullStorageException("Multiplication", "argument list");
+    for (int i = 0; i < args.size(); i++) {
+      if (args.get(i) == null) {
+        throw new NullStorageException("Multiplication", "argument " + (i+1));
+      }
+    }
+    if (args.size() == 0) return new IValue(1);
+    if (args.size() == 1) return args.get(0);
+    return new Multiplication(args);
   }
 
   public static IntegerExpression createNegation(IntegerExpression arg) {
