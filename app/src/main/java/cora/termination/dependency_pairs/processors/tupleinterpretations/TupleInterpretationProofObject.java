@@ -1,10 +1,17 @@
 package cora.termination.dependency_pairs.processors.tupleinterpretations;
 
-import java.util.List;
+import java.util.Hashtable;
 import java.util.Set;
 
+
+import charlie.smt.Constraint;
 import charlie.smt.IntegerExpression;
+import charlie.trs.Rule;
+import charlie.util.Pair;
+import charlie.terms.FunctionSymbol;
+import charlie.terms.Term;
 import cora.io.OutputModule;
+import cora.termination.dependency_pairs.DP;
 import cora.termination.dependency_pairs.Problem;
 import cora.termination.dependency_pairs.processors.ProcessorProofObject;
 
@@ -12,7 +19,9 @@ public class TupleInterpretationProofObject extends ProcessorProofObject {
 
   private String _reason;
   private Boolean _success = false;
-  private List<IntegerExpression> _costFunctions;
+  private Hashtable<FunctionSymbol, IntegerExpression> _costFunctions;
+  private Hashtable<Rule, Constraint> _ruleInterpretations;
+  private Hashtable<DP, Pair<IntegerExpression, IntegerExpression>> _DPInterpretations;
 
   /**
    * A failed proof; SMT-Solver returned NO.
@@ -40,10 +49,18 @@ public class TupleInterpretationProofObject extends ProcessorProofObject {
    * @param oriented The indexes of the oriented DPs
    * @param costFunctions The cost functions for each function symbol as interpreted by the tuple interpretation
    */
-  public TupleInterpretationProofObject(Problem input, Set<Integer> oriented, List<IntegerExpression> costFunctions) {
+  public TupleInterpretationProofObject(
+    Problem input, 
+    Set<Integer> oriented, 
+    Hashtable<FunctionSymbol, IntegerExpression> costFunctions,
+    Hashtable<Rule, Constraint> ruleInterpretations,
+    Hashtable<DP, Pair<IntegerExpression, IntegerExpression>> DPInterpretations
+  ) {
     super(input, input.removeDPs(oriented, true));
-    _success = costFunctions != null && !costFunctions.isEmpty();
+    _success = oriented != null && !oriented.isEmpty();
     _costFunctions = costFunctions;
+    _ruleInterpretations = ruleInterpretations;
+    _DPInterpretations = DPInterpretations;
   }
 
   /**
@@ -61,13 +78,54 @@ public class TupleInterpretationProofObject extends ProcessorProofObject {
       }
       return;
     }
-
     module.println("A suitable tuple interpretation was found:");
 
-    // TODO: print the actual interpretation functions per function symbol
-    for (IntegerExpression costFunction : _costFunctions) {
-      module.println("\tCost function: " + costFunction.toString());
+    module.println("Cost functions for function symbols:");
+
+    module.startTable();
+    _costFunctions.forEach((term, expr) -> {
+      module.nextColumn("J(%a)", term);
+      module.nextColumn("=");
+      module.println("%a", expr);
+    });
+
+    module.endTable();
+
+    module.println("Rule interpretations:");
+
+    _ruleInterpretations.forEach((rule, constraint) -> {
+      module.print("Rule '%a' was oriented using: ", rule);
+      module.print("[[%a]] >= [[%a]]", rule.queryLeftSide(), rule.queryRightSide());
+      module.println(", interpeted as %a", constraint);
+    });
+
+    if (!_output.isEmpty()) {
+      module.println("Dependency Pair interpretations for non-oriented DPs:");
+
+
+      _output.getFirst().getDPList().forEach(dp -> {
+        module.print("Dependency pair '%a → %a' was oriented using:\n", dp.lhs(), dp.rhs());
+        module.print("\t[[%a]] >= [[%a]]", dp.lhs(), dp.rhs());
+        module.print(" with\n");
+        module.println("\t%a", _DPInterpretations.get(dp));
+      });
+
     }
+
+    module.println(
+      "The following Dependency Pairs were oriented and have been removed from the problem.\n" +
+      "Strictly oriented using >= instead of > by: `lhs >= 1 + rhs`, but simplified"
+    );
+
+    _DPInterpretations.forEach((dp, expressionPair) -> {
+      if (!_output.isEmpty() && _output.getFirst().getDPList().contains(dp)) return;
+
+      module.print("Dependency pair '%a → %a' was strictly oriented using:\n", dp.lhs(), dp.rhs());
+      module.print("\t[[%a]] > [[%a]]", dp.lhs(), dp.rhs());
+      module.print(" with\n");
+      module.println("\t%a > %a", expressionPair.left(), expressionPair.right());
+    });
+
   }
 
   @Override

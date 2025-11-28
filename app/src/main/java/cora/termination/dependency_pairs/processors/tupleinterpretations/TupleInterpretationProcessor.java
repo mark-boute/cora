@@ -5,22 +5,9 @@ import java.util.Hashtable;
 import java.util.List;
 import java.util.TreeSet;
 import java.util.Vector;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
+import java.util.stream.Stream;
 
-import org.checkerframework.checker.units.qual.t;
-
-import charlie.parser.Parser.Tup;
-import charlie.smt.Addition;
-import charlie.smt.CMult;
-import charlie.smt.Constraint;
-import charlie.smt.IValue;
-import charlie.smt.IVar;
-import charlie.smt.IntegerExpression;
-import charlie.smt.Multiplication;
-import charlie.smt.SmtFactory;
-import charlie.smt.SmtProblem;
-import charlie.smt.Valuation;
+import charlie.smt.*;
 import charlie.smt.SmtSolver.Answer;
 import charlie.terms.FunctionSymbol;
 import charlie.terms.Term;
@@ -32,6 +19,7 @@ import charlie.trs.TrsProperties.Level;
 import charlie.trs.TrsProperties.Lhs;
 import charlie.trs.TrsProperties.Root;
 import charlie.trs.TrsProperties.TypeLevel;
+import charlie.util.Pair;
 import cora.config.Settings;
 import cora.termination.dependency_pairs.Problem;
 import cora.termination.dependency_pairs.processors.Processor;
@@ -39,6 +27,11 @@ import cora.termination.dependency_pairs.processors.ProcessorProofObject;
 import cora.termination.dependency_pairs.DP;
 
 public class TupleInterpretationProcessor implements Processor {
+
+  private Hashtable<Rule, Pair<IntegerExpression, IntegerExpression>> _ruleInterpretations = new Hashtable<>();
+  private Hashtable<DP, Pair<IntegerExpression, IntegerExpression>> _dpInterpretations = new Hashtable<>();
+  private List<IVar> _allVariableIntegerExpressions = new ArrayList<>();
+  private Hashtable<DP, IVar> _dpReductionIndicators = new Hashtable<>();
 
   public static String queryDisabledCode() {
     return "tupleinterp";
@@ -67,7 +60,7 @@ public class TupleInterpretationProcessor implements Processor {
     Term term, 
     SmtProblem problem, 
     Hashtable<FunctionSymbol, Vector<IntegerExpression>> symbolArgumentWeights,
-    Hashtable<Variable, IntegerExpression> variableIntegerExpressions
+    Hashtable<Variable, IVar> variableIntegerExpressions
   ) {
 
     if (term.isVariable()) {  // Term root is a free (unsatisfied) variable
@@ -135,7 +128,7 @@ public class TupleInterpretationProcessor implements Processor {
     Multiplication multiplication,
     List<IntegerExpression> nonVariablesInChildExpressionOut,
     List<IntegerExpression> variableInChildExpressionOut,
-    Hashtable<Variable, IntegerExpression> variableIntegerExpressions
+    Hashtable<Variable, IVar> variableIntegerExpressions
   ) {
     for (int multChild = 1; multChild <= multiplication.numChildren(); multChild++) {
       IntegerExpression multiplicationChild = multiplication.queryChild(multChild);
@@ -159,7 +152,7 @@ public class TupleInterpretationProcessor implements Processor {
    */
   private void combineTermsOnVariables(
     Addition addition,
-    Hashtable<Variable, IntegerExpression> variableIntegerExpressions,
+    Hashtable<Variable, IVar> variableIntegerExpressions,
     Hashtable<IntegerExpression, List<IntegerExpression>> variableCoefficients
   ) {
 
@@ -264,11 +257,11 @@ public class TupleInterpretationProcessor implements Processor {
    * 
    * @return Simplified addition representing lhsCost - rhsCost
    */
-  private Addition simplifiedIterpertationForRule(
+  private Pair<IntegerExpression, IntegerExpression> simplifiedIterpertationForRule(
     Term lhs, Term rhs,
     SmtProblem problem, 
     Hashtable<FunctionSymbol, Vector<IntegerExpression>> symbolArgumentWeights,
-    Hashtable<Variable, IntegerExpression> variableIntegerExpressions
+    Hashtable<Variable, IVar> variableIntegerExpressions
   ) {
     IntegerExpression lhsCost = interpretTerm(
       lhs,
@@ -285,12 +278,66 @@ public class TupleInterpretationProcessor implements Processor {
     );
 
     // System.out.println(
-    //   "Rule: " + lhs.toString() + " -> " + rhs.toString() +
+    //   "Rule: " + lhs.toString() + " → " + rhs.toString() +
     //   "\n\tinterpreted as: " + lhsCost.toString() + " >= " + rhsCost.toString()
     // );
 
     // Create constraint that lhsCost >= rhsCost -> lhsCost - rhsCost >= 0
-    return (Addition) SmtFactory.createAddition(lhsCost, rhsCost.negate()).simplify();
+    return new Pair<IntegerExpression, IntegerExpression>(lhsCost, rhsCost);
+  }
+
+
+  // THIS SHOULD PROBABLY BE ADDED TO INTEGEREXPRESSION
+  private IntegerExpression partialEvalIntegerExpression(
+    IntegerExpression expression,
+    Valuation valuation
+  ) {
+    switch (expression) {
+      case IVar var -> { // base case: variable or coefficient
+        if (_allVariableIntegerExpressions.contains(var)) {
+          return var;
+        }
+        return SmtFactory.createValue(valuation.queryAssignment(var));
+      }
+
+      case Addition addition -> {
+        List<IntegerExpression> evaluatedChildren = new ArrayList<>();
+        for (int i = 1; i <= addition.numChildren(); i++) {
+          evaluatedChildren.add(
+            this.partialEvalIntegerExpression(
+              addition.queryChild(i), valuation
+            )
+          );
+        }
+        return SmtFactory.createAddition(evaluatedChildren);
+      }
+
+      case CMult cMult -> {
+        return SmtFactory.createMultiplication(
+          cMult.queryConstant(),
+          this.partialEvalIntegerExpression(cMult.queryChild(), valuation)
+        );
+      }
+
+      case Multiplication multiplication -> {
+        List<IntegerExpression> evaluatedChildren = new ArrayList<>();
+        for (int i = 1; i <= multiplication.numChildren(); i++) {
+          evaluatedChildren.add(
+            this.partialEvalIntegerExpression(
+              multiplication.queryChild(i), valuation
+            )
+          );
+        }
+        return SmtFactory.createMultiplication(evaluatedChildren);
+      }
+
+      default -> {
+        throw new IllegalStateException(
+          "Unexpected IntegerExpression type in partialEvalIntegerExpression: " + 
+          expression.getClass()
+        );
+      }
+    }
   }
 
   /**
@@ -324,47 +371,55 @@ public class TupleInterpretationProcessor implements Processor {
 
     // Create a generic cost function for each rewrite rule in the TRS
     for (Rule rule : dpp.getOriginalTRS().queryRules()) {
-      Hashtable<Variable, IntegerExpression> variableIntegerExpressions = new Hashtable<>();
+      Hashtable<Variable, IVar> variableIntegerExpressions = new Hashtable<>();
       Hashtable<IntegerExpression, List<IntegerExpression>> variableCoefficients = new Hashtable<>();
 
-      Addition lhsMinusRhs = this.simplifiedIterpertationForRule(
+      Pair<IntegerExpression, IntegerExpression> interpretationForRule = this.simplifiedIterpertationForRule(
         rule.queryLeftSide(), rule.queryRightSide(), 
         problem, symbolArgumentWeights, variableIntegerExpressions
       );
+      _ruleInterpretations.put(rule, interpretationForRule);
 
-      System.out.println(
-        "TupleInterpretationProcessor $ \n\tProcessing Rule: " + rule.toString() + 
-        "\n\tinterpreted cost: " + lhsMinusRhs.toString());
+      Addition lhsMinusRhs = (Addition) SmtFactory.createAddition(
+        interpretationForRule.left(),
+        SmtFactory.createNegation(interpretationForRule.right())
+      ).simplify();
+
+      // System.out.println(
+      //   "TupleInterpretationProcessor $ \n\tProcessing Rule: " + rule.toString() + 
+      //   "\n\t Simplified cost: " + lhsMinusRhs.toString());
 
       this.combineTermsOnVariables(lhsMinusRhs, variableIntegerExpressions, variableCoefficients);
 
+      _allVariableIntegerExpressions.addAll(variableIntegerExpressions.values());
       variableCoefficients.forEach((variableExpr, coefficientExpr) -> {
-        Constraint constraint = SmtFactory.createGreater(
-          SmtFactory.createAddition(coefficientExpr),
-          SmtFactory.createValue(0)
-        );
-        System.out.println(
-          "\t\tRequired by Rule " + constraint.toString() + 
-          " for variable expression " + 
-          (variableExpr.getClass() != IValue.class ? variableExpr.toString() : "constant part")
-        );
+        Constraint constraint = SmtFactory.createGeq(SmtFactory.createAddition(coefficientExpr));
+        // System.out.println(
+        //   "\t\tRequired by Rule " + constraint.toString() + 
+        //   " for variable expression " + 
+        //   (variableExpr.getClass() != IValue.class ? variableExpr.toString() : "constant part")
+        // );
         problem.require(constraint);
       });
     }
-  
-    Hashtable<DP, IVar> dpReductionIndicators = new Hashtable<>();
 
     for (DP dp : dpp.getDPList()) {
-      Hashtable<Variable, IntegerExpression> variableIntegerExpressions = new Hashtable<>();
+      Hashtable<Variable, IVar> variableIntegerExpressions = new Hashtable<>();
       Hashtable<IntegerExpression, List<IntegerExpression>> variableCoefficients = new Hashtable<>();
 
-      Addition lhsMinusRhs = this.simplifiedIterpertationForRule(
+      Pair<IntegerExpression, IntegerExpression> interpretationForDP = this.simplifiedIterpertationForRule(
         dp.lhs(), dp.rhs(), 
         problem, symbolArgumentWeights, variableIntegerExpressions
       );
+      _dpInterpretations.put(dp, interpretationForDP);
 
-      System.out.println("TupleInterpretationProcessor $ Processing DP: " + dp.toString());
-      System.out.println("TupleInterpretationProcessor $ simplified cost: " + lhsMinusRhs.toString());
+      Addition lhsMinusRhs = (Addition) SmtFactory.createAddition(
+        interpretationForDP.left(),
+        SmtFactory.createNegation(interpretationForDP.right())
+      ).simplify();
+
+      // System.out.println("TupleInterpretationProcessor $ Processing DP: " + dp.toString());
+      // System.out.println("TupleInterpretationProcessor $ simplified cost: " + lhsMinusRhs.toString());
 
       this.combineTermsOnVariables(lhsMinusRhs, variableIntegerExpressions, variableCoefficients);
 
@@ -381,52 +436,131 @@ public class TupleInterpretationProcessor implements Processor {
       
       IVar reductionIndicator = SmtFactory.createIntegerVariable(
         problem, 
-        "dp_" + dp.lhs().queryRoot() + "->" + dp.rhs().queryRoot(),
+        dp.lhs().queryRoot() + "_red",
          0, 1
       );
-      dpReductionIndicators.put(dp, reductionIndicator);
+      _dpReductionIndicators.put(dp, reductionIndicator);
       
-      List<IntegerExpression> constant = variableCoefficients.getOrDefault(SmtFactory.createValue(1), new ArrayList<>());
-      constant.add(SmtFactory.createAddition(SmtFactory.createValue(1), reductionIndicator.negate()));
-      variableCoefficients.put(SmtFactory.createValue(1), constant);
+      List<IntegerExpression> constants = variableCoefficients.getOrDefault(SmtFactory.createValue(1), new ArrayList<>());
+      // System.out.println("\t\tAdding reduction indicator to constant part for DP: " + dp.toString());
+      // System.out.println("\t\t\tBefore: " + constants.toString());
+
+      // problem.require(
+      //   SmtFactory.createDisjunction(
+      //     Stream.concat(
+      //       Stream.of(SmtFactory.createValue(1)),
+      //       constants.stream()
+      //     )
+      //     .map(constant -> SmtFactory.createGreater(constant, reductionIndicator))
+      //     .toList()
+      //   )       
+      // );
+
+      constants.add(SmtFactory.createAddition(SmtFactory.createValue(-1), reductionIndicator));
+      variableCoefficients.put(SmtFactory.createValue(1), constants);
       
+      // System.out.println("\t\t\tAfter: " + constants.toString());
+
+      _allVariableIntegerExpressions.addAll(variableIntegerExpressions.values());
       variableCoefficients.forEach((variableExpr, coefficientExpr) -> {
         Constraint constraint = SmtFactory.createGeq(SmtFactory.createAddition(coefficientExpr));
-        System.out.println(
-          "\t\tRequired by DP " + constraint.toString() + 
-          " for variable expression " + 
-          (variableExpr.getClass() != IValue.class ? variableExpr.toString() : "constant part")
-        );
+        // System.out.println(
+        //   "\t\tRequired by DP " + constraint.toString() + 
+        //   " for variable expression " + 
+        //   (variableExpr.getClass() != IValue.class ? variableExpr.toString() : "constant part")
+        // );
         problem.require(constraint);
       });
+
+      // TODO: require all coefficients summed to be geq 0.
     }
+
+    problem.require(SmtFactory.createDisjunction(
+      _dpReductionIndicators.values().stream()
+        .map((indicator) -> SmtFactory.createGreater(SmtFactory.createValue(1), indicator))
+        .toList()
+    ));
+    // System.out.println("Requiring: "+ SmtFactory.createDisjunction(
+    //   _dpReductionIndicators.values().stream()
+    //     .map((indicator) -> SmtFactory.createGreater(SmtFactory.createValue(1), indicator))
+    //     .toList()
+    // ).toString());
+
+    // problem.forEach((req) -> {
+    //   System.out.println("SMT requires: " + req.toString());
+    // });
 
     return switch (Settings.smtSolver.checkSatisfiability(problem)) {
       case Answer.YES(Valuation val) -> {
 
+        // Determine which DPs are oriented
         TreeSet<Integer> indexOfOrientedDPs = new TreeSet<>();
         for (int dpIndex = 0; dpIndex < dpp.getDPList().size(); dpIndex++) {
           DP dp = dpp.getDPList().get(dpIndex);
-          if (val.queryAssignment(dpReductionIndicators.get(dp)) == 0) {
+          if (val.queryAssignment(_dpReductionIndicators.get(dp)) == 0) {
             indexOfOrientedDPs.add(dpIndex); 
+            // System.out.println("TupleInterpretationProcessor $ DP oriented: " + dp.toString());
+          } else {
+            // System.out.println("Could not orient: " + dp.toString());
           }
         }
 
-        List<IntegerExpression> interpetations = new ArrayList<>();
-
-        // TODO: construct the actual interpretation functions per function symbol
-
+        // For each function symbol, query and update the assigned weights
         for (FunctionSymbol symbol : symbolArgumentWeights.keySet()) {
           symbolArgumentWeights.computeIfPresent(symbol, (key, argumentWeights) -> {
             Vector<IntegerExpression> evaluatedWeights = new Vector<>();
             argumentWeights.forEach(weight -> {
+              System.out.println(//"TupleInterpretationProcessor $ Weight for symbol " + 
+                // "[[ " + symbol.queryName() + " ]] : " + 
+                weight.toString() + " = " + 
+                val.queryAssignment((IVar) weight)
+              );
               evaluatedWeights.add(SmtFactory.createValue(val.queryAssignment((IVar) weight)));
             });
             return evaluatedWeights;
           });
         }
 
-        yield new TupleInterpretationProofObject(dpp, indexOfOrientedDPs, interpetations);
+        Hashtable<Rule, Constraint> ruleInterpretations = new Hashtable<>();
+        _ruleInterpretations.forEach((rule, pair) -> {
+          // System.out.println("#Rule: " + rule.toString() +
+          //   "\n\tinterpreted as: " + 
+          //   pair.left().toString() + 
+          //   " >= " + 
+          //   pair.right().toString()
+          // );
+          ruleInterpretations.put(rule, SmtFactory.createGeq(
+            this.partialEvalIntegerExpression(pair.left(), val).simplify(),
+            this.partialEvalIntegerExpression(pair.right(), val).simplify()
+          ));
+        });
+      
+        Hashtable<DP, Pair<IntegerExpression, IntegerExpression>> dpInterpretations = new Hashtable<>();
+        _dpInterpretations.forEach((dp, pair) -> {
+          dpInterpretations.put(dp, new Pair<>(
+            this.partialEvalIntegerExpression(pair.left(), val).simplify(),
+            this.partialEvalIntegerExpression(pair.right(), val).simplify()
+          ));
+        });
+
+        Hashtable<FunctionSymbol, IntegerExpression> costFunctions = new Hashtable<>();
+        dpp.getOriginalTRS().queryAlphabet().getSymbols().forEach((functionSymbol) -> {
+          Vector<IntegerExpression> weights = symbolArgumentWeights.get(functionSymbol);
+          List<IntegerExpression> subterms = new ArrayList<>();
+          subterms.add(weights.getFirst()); // constant term
+          for (int argIndex = 0; argIndex < functionSymbol.queryArity(); argIndex++) {
+            subterms.add(SmtFactory.createMultiplication(
+              weights.get(argIndex + 1), 
+              SmtFactory.createIntegerVariable(problem, String.valueOf((char) ('a' + argIndex)), argIndex, argIndex)
+            ));
+          }
+          costFunctions.put(functionSymbol, SmtFactory.createAddition(subterms));
+        });
+
+        yield new TupleInterpretationProofObject(
+          dpp, indexOfOrientedDPs, costFunctions, 
+          ruleInterpretations, dpInterpretations
+        );
       }
 
       case Answer.MAYBE(String reason) -> new TupleInterpretationProofObject(dpp, reason);
