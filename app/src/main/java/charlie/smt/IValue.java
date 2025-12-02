@@ -15,6 +15,8 @@
 
 package charlie.smt;
 
+import java.util.Hashtable;
+
 public final class IValue extends IntegerExpression {
   private int _k;
 
@@ -26,6 +28,10 @@ public final class IValue extends IntegerExpression {
 
   public int queryValue() {
     return _k;
+  }
+
+  public IntegerExpression substitute(Hashtable<IVar, Integer> values) {
+    return this;
   }
 
   public int evaluate(Valuation val) {

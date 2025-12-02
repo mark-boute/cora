@@ -15,6 +15,8 @@
 
 package charlie.smt;
 
+import java.util.Hashtable;
+
 import charlie.exceptions.SmtEvaluationException;
 
 public final class IVar extends IntegerExpression {
@@ -41,6 +43,11 @@ public final class IVar extends IntegerExpression {
 
   public String queryName() {
     return _name;
+  }
+
+  public IntegerExpression substitute(Hashtable<IVar, Integer> values) {
+    if (values.containsKey(this)) return new IValue(values.get(this));
+    else return this;
   }
 
   public int evaluate(Valuation val) {

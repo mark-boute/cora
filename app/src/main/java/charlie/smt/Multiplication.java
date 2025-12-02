@@ -17,8 +17,10 @@ package charlie.smt;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Hashtable;
 import java.util.List;
 import charlie.exceptions.IndexingException;
+import charlie.exceptions.SmtEvaluationException;
 
 public final class Multiplication extends IntegerExpression {
   protected ArrayList<IntegerExpression> _children;
@@ -61,6 +63,19 @@ public final class Multiplication extends IntegerExpression {
       throw new IndexingException("Multiplication", "queryChild", index, 1, _children.size());
     }
     return _children.get(index-1);
+  }
+
+  public IntegerExpression substitute(Hashtable<IVar, Integer> values) {
+    ArrayList<IntegerExpression> newChildren = new ArrayList<IntegerExpression>();
+    int constant = 1;
+    for (int i = 0; i < _children.size(); i++) {
+      IntegerExpression child = _children.get(i).substitute(values);
+      if (child instanceof IValue v) constant *= v.queryValue();
+      else newChildren.add(child);
+    }
+    if (newChildren.size() == 0) return new IValue(constant);
+    if (constant != 1) newChildren.add(0, new IValue(constant));
+    return new Multiplication(newChildren).simplify();
   }
 
   public int evaluate(Valuation val) {

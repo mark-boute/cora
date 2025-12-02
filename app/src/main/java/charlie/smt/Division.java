@@ -15,6 +15,8 @@
 
 package charlie.smt;
 
+import java.util.Hashtable;
+
 public final class Division extends IntegerExpression {
   private IntegerExpression _numerator;
   private IntegerExpression _denominator;
@@ -32,6 +34,15 @@ public final class Division extends IntegerExpression {
 
   public IntegerExpression queryDenominator() {
     return _denominator;
+  }
+
+  public IntegerExpression substitute(Hashtable<IVar, Integer> values) {
+    IntegerExpression peNum = _numerator.substitute(values);
+    IntegerExpression peDen = _denominator.substitute(values);
+    if (peNum instanceof IValue n && peDen instanceof IValue d) {
+      return new IValue(evaluateFor(n.queryValue(), d.queryValue()));
+    }
+    return new Division(peNum, peDen);
   }
 
   /**

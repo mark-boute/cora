@@ -96,7 +96,7 @@ public class TupleInterpretationProofObject extends ProcessorProofObject {
     _ruleInterpretations.forEach((rule, constraint) -> {
       module.print("Rule '%a' was oriented using: ", rule);
       module.print("[[%a]] >= [[%a]]", rule.queryLeftSide(), rule.queryRightSide());
-      module.println(", interpeted as %a", constraint);
+      module.println(", interpreted as %a", constraint);
     });
 
     if (!_output.isEmpty()) {
@@ -112,10 +112,7 @@ public class TupleInterpretationProofObject extends ProcessorProofObject {
 
     }
 
-    module.println(
-      "The following Dependency Pairs were oriented and have been removed from the problem.\n" +
-      "Strictly oriented using >= instead of > by: `lhs >= 1 + rhs`, but simplified"
-    );
+    module.println("The following Dependency Pairs were oriented and have been removed from the problem.");
 
     _DPInterpretations.forEach((dp, expressionPair) -> {
       if (!_output.isEmpty() && _output.getFirst().getDPList().contains(dp)) return;

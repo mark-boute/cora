@@ -16,6 +16,7 @@
 package charlie.smt;
 
 import java.lang.Comparable;
+import java.util.Hashtable;
 
 /**
  * An IntegerExpression is an expression built from integer values, addition, multiplication, etc.:
@@ -40,6 +41,13 @@ public sealed abstract class IntegerExpression implements Comparable<IntegerExpr
   protected IntegerExpression() {
     _simplified = false;
   }
+
+  /**
+   * This performs a partial evaluation of the current expression, taking the values for all
+   * variables present in the given valuation. Variables not present in the valuation are left as
+   * is.
+   */
+  public abstract IntegerExpression partialEvaluation(Hashtable<IVar, Integer> values);
 
   /**
    * This evaluates the current expression, taking the values for all variables from the given
