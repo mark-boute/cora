@@ -20,7 +20,6 @@ import java.util.Collections;
 import java.util.Hashtable;
 import java.util.List;
 import charlie.exceptions.IndexingException;
-import charlie.exceptions.SmtEvaluationException;
 
 public final class Multiplication extends IntegerExpression {
   protected ArrayList<IntegerExpression> _children;
