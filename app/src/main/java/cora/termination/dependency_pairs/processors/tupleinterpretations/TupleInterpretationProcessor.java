@@ -478,16 +478,16 @@ public class TupleInterpretationProcessor implements Processor {
         Hashtable<Rule, Constraint> ruleInterpretations = new Hashtable<>();
         _ruleInterpretations.forEach((rule, pair) -> {
           ruleInterpretations.put(rule, SmtFactory.createGeq(
-            pair.left().partialEvaluation(weightAssignments).simplify(),
-            pair.right().partialEvaluation(weightAssignments).simplify()
+            pair.left().substitute(weightAssignments).simplify(),
+            pair.right().substitute(weightAssignments).simplify()
           ));
         });
       
         Hashtable<DP, Pair<IntegerExpression, IntegerExpression>> dpInterpretations = new Hashtable<>();
         _dpInterpretations.forEach((dp, pair) -> {
           dpInterpretations.put(dp, new Pair<>(
-            pair.left().partialEvaluation(weightAssignments).simplify(),
-            pair.right().partialEvaluation(weightAssignments).simplify()
+            pair.left().substitute(weightAssignments).simplify(),
+            pair.right().substitute(weightAssignments).simplify()
           ));
         });
 
