@@ -461,14 +461,14 @@ public class TupleInterpretationProcessor implements Processor {
           }
         }
 
-        Hashtable<IVar, Integer> weightAssignments = new Hashtable<>();
+        Hashtable<IVar, IntegerExpression> weightAssignments = new Hashtable<>();
         // For each function symbol, query and update the assigned weights
         for (FunctionSymbol symbol : symbolArgumentWeights.keySet()) {
           symbolArgumentWeights.computeIfPresent(symbol, (key, argumentWeights) -> {
             Vector<IntegerExpression> evaluatedWeights = new Vector<>();
             argumentWeights.forEach(weight -> {
-              Integer evaluatedWeight = val.queryAssignment((IVar) weight);
-              evaluatedWeights.add(SmtFactory.createValue(evaluatedWeight));
+              IntegerExpression evaluatedWeight = SmtFactory.createValue(val.queryAssignment((IVar) weight));
+              evaluatedWeights.add(evaluatedWeight);
               weightAssignments.put((IVar) weight, evaluatedWeight);
             });
             return evaluatedWeights;

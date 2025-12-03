@@ -39,7 +39,7 @@ public final class CMult extends IntegerExpression {
     return _main;
   }
 
-  public IntegerExpression substitute(Hashtable<IVar, Integer> values) {
+  public IntegerExpression substitute(Hashtable<IVar, IntegerExpression> values) {
     IntegerExpression peMain = _main.substitute(values);
     if (peMain instanceof IValue v) return new IValue(_constant * v.queryValue());
     return new CMult(_constant, peMain);

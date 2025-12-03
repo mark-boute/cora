@@ -30,7 +30,7 @@ public final class IValue extends IntegerExpression {
     return _k;
   }
 
-  public IntegerExpression substitute(Hashtable<IVar, Integer> values) {
+  public IntegerExpression substitute(Hashtable<IVar, IntegerExpression> values) {
     return this;
   }
 

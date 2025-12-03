@@ -137,7 +137,7 @@ public final class Addition extends IntegerExpression {
     return new Pair<IntegerExpression,IntegerExpression>(p, n);
   }
 
-  public IntegerExpression substitute(Hashtable<IVar, Integer> values) {
+  public IntegerExpression substitute(Hashtable<IVar, IntegerExpression> values) {
     ArrayList<IntegerExpression> newChildren = new ArrayList<IntegerExpression>();
     for (int i = 0; i < _children.size(); i++) {
       IntegerExpression child = _children.get(i).substitute(values);

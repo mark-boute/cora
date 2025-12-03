@@ -45,8 +45,8 @@ public final class IVar extends IntegerExpression {
     return _name;
   }
 
-  public IntegerExpression substitute(Hashtable<IVar, Integer> values) {
-    if (values.containsKey(this)) return new IValue(values.get(this));
+  public IntegerExpression substitute(Hashtable<IVar, IntegerExpression> values) {
+    if (values.containsKey(this)) return values.get(this);
     else return this;
   }
 

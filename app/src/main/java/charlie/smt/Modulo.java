@@ -36,7 +36,7 @@ public final class Modulo extends IntegerExpression {
     return _denominator;
   }
 
-  public IntegerExpression substitute(Hashtable<IVar, Integer> values) {
+  public IntegerExpression substitute(Hashtable<IVar, IntegerExpression> values) {
     IntegerExpression peNum = _numerator.substitute(values);
     IntegerExpression peDen = _denominator.substitute(values);
     if (peNum instanceof IValue n && peDen instanceof IValue d) {

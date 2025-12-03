@@ -64,7 +64,7 @@ public final class Multiplication extends IntegerExpression {
     return _children.get(index-1);
   }
 
-  public IntegerExpression substitute(Hashtable<IVar, Integer> values) {
+  public IntegerExpression substitute(Hashtable<IVar, IntegerExpression> values) {
     ArrayList<IntegerExpression> newChildren = new ArrayList<IntegerExpression>();
     int constant = 1;
     for (int i = 0; i < _children.size(); i++) {

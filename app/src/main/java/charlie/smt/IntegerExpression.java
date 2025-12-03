@@ -47,7 +47,7 @@ public sealed abstract class IntegerExpression implements Comparable<IntegerExpr
    * variables present in the given valuation. Variables not present in the valuation are left as
    * is.
    */
-  public abstract IntegerExpression substitute(Hashtable<IVar, Integer> values);
+  public abstract IntegerExpression substitute(Hashtable<IVar, IntegerExpression> values);
 
   /**
    * This evaluates the current expression, taking the values for all variables from the given
