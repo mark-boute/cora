@@ -15,7 +15,7 @@
 
 package charlie.smt;
 
-import java.util.Hashtable;
+import java.util.Map;
 
 /** A multiplication by a constant */
 public final class CMult extends IntegerExpression {
@@ -39,13 +39,12 @@ public final class CMult extends IntegerExpression {
     return _main;
   }
 
-  public IntegerExpression substitute(Hashtable<IVar, IntegerExpression> values) {
+  public IntegerExpression substitute(Map<IVar, IntegerExpression> values) {
     IntegerExpression peMain = _main.substitute(values);
     if (peMain instanceof IValue v) return new IValue(_constant * v.queryValue());
     return new CMult(_constant, peMain);
   }
 
-  // TODO: CMult evaluate implementation using partial evaluation?
   public int evaluate(Valuation val) {
     return _constant * _main.evaluate(val);
   }

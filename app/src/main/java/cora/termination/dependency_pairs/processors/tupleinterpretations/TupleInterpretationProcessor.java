@@ -78,7 +78,7 @@ public class TupleInterpretationProcessor implements Processor {
       variableIntegerExpressions.putIfAbsent(
         term.queryVariable(), 
         SmtFactory.createIntegerVariable(
-          problem, term.queryVariable().queryName(), 0, 1000
+          problem, term.queryVariable().queryName(), 0, 10
         )
       );
 
@@ -265,7 +265,6 @@ public class TupleInterpretationProcessor implements Processor {
     Hashtable<FunctionSymbol, Vector<IntegerExpression>> symbolArgumentWeights,
     Hashtable<Variable, IVar> variableIntegerExpressions
   ) {
-    System.out.println("intps");
     IntegerExpression lhsCost = interpretTerm(
       lhs, problem, symbolArgumentWeights, variableIntegerExpressions
     );
@@ -273,8 +272,6 @@ public class TupleInterpretationProcessor implements Processor {
     IntegerExpression rhsCost = interpretTerm(
       rhs, problem, symbolArgumentWeights, variableIntegerExpressions
     );
-
-    System.out.println("done intps");
 
     // Create constraint that lhsCost >= rhsCost -> lhsCost - rhsCost >= 0
     return new Pair<IntegerExpression, IntegerExpression>(lhsCost, rhsCost);
@@ -358,7 +355,7 @@ public class TupleInterpretationProcessor implements Processor {
       Vector<IntegerExpression> argumentWeights = new Vector<>();
       for (int i = 0; i < symbol.queryArity() + 1; i++) {
         argumentWeights.add(
-          SmtFactory.createIntegerVariable(problem, symbol.queryName() + "_w" + i, 0,1000)
+          SmtFactory.createIntegerVariable(problem, symbol.queryName() + "_w" + i, 0,10)
         );
       }
       symbolArgumentWeights.put(symbol, argumentWeights);
@@ -420,7 +417,8 @@ public class TupleInterpretationProcessor implements Processor {
         making sure the SMT levetates towards strictly decreasing interpretations.        
       */
       
-      System.out.println("Creating indicator");
+// TODO: improve to constant part end up being > 0.
+// This removes the need for an indicator.
 
       IVar reductionIndicator = SmtFactory.createIntegerVariable(
         problem, dp.lhs().queryRoot() + "_red", 0, 1
@@ -434,8 +432,6 @@ public class TupleInterpretationProcessor implements Processor {
       constants.add(SmtFactory.createAddition(SmtFactory.createValue(-1), reductionIndicator));
       variableCoefficients.put(SmtFactory.createValue(1), constants);
       
-      System.out.println("req loop over variableCoefficients");
-
       _allVariableIntegerExpressions.addAll(variableIntegerExpressions.values());
       variableCoefficients.forEach((variableExpr, coefficientExpr) -> {
         problem.require(SmtFactory.createGeq(SmtFactory.createAddition(coefficientExpr)));

@@ -17,7 +17,7 @@ package charlie.smt;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Hashtable;
+import java.util.Map;
 import java.util.List;
 import charlie.exceptions.IndexingException;
 
@@ -64,17 +64,12 @@ public final class Multiplication extends IntegerExpression {
     return _children.get(index-1);
   }
 
-  public IntegerExpression substitute(Hashtable<IVar, IntegerExpression> values) {
+  public IntegerExpression substitute(Map<IVar, IntegerExpression> values) {
     ArrayList<IntegerExpression> newChildren = new ArrayList<IntegerExpression>();
-    int constant = 1;
     for (int i = 0; i < _children.size(); i++) {
-      IntegerExpression child = _children.get(i).substitute(values);
-      if (child instanceof IValue v) constant *= v.queryValue();
-      else newChildren.add(child);
+      newChildren.add(_children.get(i).substitute(values));
     }
-    if (newChildren.size() == 0) return new IValue(constant);
-    if (constant != 1) newChildren.add(0, new IValue(constant));
-    return new Multiplication(newChildren).simplify();
+    return new Multiplication(newChildren);
   }
 
   public int evaluate(Valuation val) {

@@ -15,7 +15,7 @@
 
 package charlie.smt;
 
-import java.util.Hashtable;
+import java.util.Map;
 
 import charlie.exceptions.SmtEvaluationException;
 
@@ -45,7 +45,7 @@ public final class IVar extends IntegerExpression {
     return _name;
   }
 
-  public IntegerExpression substitute(Hashtable<IVar, IntegerExpression> values) {
+  public IntegerExpression substitute(Map<IVar, IntegerExpression> values) {
     if (values.containsKey(this)) return values.get(this);
     else return this;
   }

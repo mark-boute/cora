@@ -19,7 +19,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.ArrayList;
-import java.util.Hashtable;
 
 import charlie.exceptions.IndexingException;
 import charlie.util.Pair;
@@ -137,13 +136,12 @@ public final class Addition extends IntegerExpression {
     return new Pair<IntegerExpression,IntegerExpression>(p, n);
   }
 
-  public IntegerExpression substitute(Hashtable<IVar, IntegerExpression> values) {
+  public IntegerExpression substitute(Map<IVar, IntegerExpression> values) {
     ArrayList<IntegerExpression> newChildren = new ArrayList<IntegerExpression>();
     for (int i = 0; i < _children.size(); i++) {
-      IntegerExpression child = _children.get(i).substitute(values);
-      newChildren.add(child);
+      newChildren.add(_children.get(i).substitute(values));
     }
-    return new Addition(newChildren).simplify();
+    return new Addition(newChildren);
   }
 
   public int evaluate(Valuation val) {

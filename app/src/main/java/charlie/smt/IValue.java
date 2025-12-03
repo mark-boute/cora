@@ -15,7 +15,7 @@
 
 package charlie.smt;
 
-import java.util.Hashtable;
+import java.util.Map;
 
 public final class IValue extends IntegerExpression {
   private int _k;
@@ -30,7 +30,7 @@ public final class IValue extends IntegerExpression {
     return _k;
   }
 
-  public IntegerExpression substitute(Hashtable<IVar, IntegerExpression> values) {
+  public IntegerExpression substitute(Map<IVar, IntegerExpression> values) {
     return this;
   }
 
