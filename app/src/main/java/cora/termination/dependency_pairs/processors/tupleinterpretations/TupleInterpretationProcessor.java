@@ -277,62 +277,6 @@ public class TupleInterpretationProcessor implements Processor {
     return new Pair<IntegerExpression, IntegerExpression>(lhsCost, rhsCost);
   }
 
-  // TODO: THIS SHOULD PROBABLY BE ADDED TO INTEGEREXPRESSION
-  /**
-   * Partially evaluates an IntegerExpression by substituting variable values from the valuation.
-   * 
-   * @param expression The IntegerExpression to partially evaluate.
-   * @param valuation The valuation containing variable assignments for non-free variables.
-   * @return The partially evaluated IntegerExpression.
-   */
-  private IntegerExpression partialEvalIntegerExpression(
-    IntegerExpression expression,
-    Valuation valuation
-  ) {
-    switch (expression) {
-      case IVar var -> { // base case: variable or coefficient
-        if (_allVariableIntegerExpressions.contains(var)) {
-          return var;
-        }
-        return SmtFactory.createValue(valuation.queryAssignment(var));
-      }
-
-      case Addition addition -> {
-        List<IntegerExpression> evaluatedChildren = new ArrayList<>();
-        for (int i = 1; i <= addition.numChildren(); i++) {
-          evaluatedChildren.add(
-            this.partialEvalIntegerExpression(addition.queryChild(i), valuation)
-          );
-        }
-        return SmtFactory.createAddition(evaluatedChildren);
-      }
-
-      case CMult cMult -> {
-        return SmtFactory.createMultiplication(
-          cMult.queryConstant(),
-          this.partialEvalIntegerExpression(cMult.queryChild(), valuation)
-        );
-      }
-
-      case Multiplication mult -> {
-        List<IntegerExpression> evaluatedChildren = new ArrayList<>();
-        for (int i = 1; i <= mult.numChildren(); i++) {
-          evaluatedChildren.add(
-            this.partialEvalIntegerExpression(mult.queryChild(i), valuation)
-          );
-        }
-        return SmtFactory.createMultiplication(evaluatedChildren);
-      }
-
-      default -> {
-        throw new IllegalStateException(
-          "Unexpected IntegerExpression type in partialEvalIntegerExpression: " + 
-          expression.getClass()
-        );
-      }
-    }
-  }
-
   /**
    * Processes a dependency pair problem using tuple interpretations.
    * 

@@ -43,7 +43,7 @@ public sealed abstract class IntegerExpression implements Comparable<IntegerExpr
   }
 
   /**
-   * This performs a partial evaluation of the current expression, taking the values for all
+   * This performs a substitution of the current expression, taking the values for all
    * variables present in the given valuation. Variables not present in the valuation are left as
    * is.
    */
