@@ -33,16 +33,16 @@ public class Interpretations {
    * @return The IntegerExpression representing the cost of the term.
    */
   public static IntegerExpression interpretTerm(
-      Term term,
-      SmtProblem problem,
-      Hashtable<FunctionSymbol, Vector<IntegerExpression>> symbolArgumentWeights,
-      Hashtable<Variable, IVar> variableIntegerExpressions) {
+    Term term,
+    SmtProblem problem,
+    Hashtable<FunctionSymbol, Vector<IntegerExpression>> symbolArgumentWeights,
+    Hashtable<Variable, IVar> variableIntegerExpressions) {
 
     if (term.isVariable()) { // Term root is a free (unsatisfied) variable
       variableIntegerExpressions.putIfAbsent(
-          term.queryVariable(),
-          SmtFactory.createIntegerVariable(
-              problem, term.queryVariable().queryName(), 0, 10));
+        term.queryVariable(),
+        SmtFactory.createIntegerVariable(problem, term.queryVariable().queryName(), 0, 10)
+      );
 
       // return variable's associated cost expression
       return variableIntegerExpressions.get(term.queryVariable());
@@ -55,12 +55,10 @@ public class Interpretations {
     subtermCosts.add(argumentWeights.getFirst()); // constant term
 
     for (int i = 0; i < term.numberArguments(); i++) {
-
       IntegerExpression innerExpression = interpretTerm(
-          term.queryArguments().get(i),
-          problem,
-          symbolArgumentWeights,
-          variableIntegerExpressions);
+        term.queryArguments().get(i), problem,
+        symbolArgumentWeights, variableIntegerExpressions
+      );
 
       subtermCosts.add(SmtFactory.createMultiplication(argumentWeights.get(i + 1), innerExpression));
     }
@@ -81,9 +79,10 @@ public class Interpretations {
    *                             belongs.
    */
   public static void addCoefficientToVarList(
-      Hashtable<IntegerExpression, List<IntegerExpression>> variableCoefficients,
-      IntegerExpression coefficientExpr,
-      IntegerExpression variableExpr) {
+    Hashtable<IntegerExpression, List<IntegerExpression>> variableCoefficients,
+    IntegerExpression coefficientExpr,
+    IntegerExpression variableExpr
+  ) {
     variableCoefficients.putIfAbsent(variableExpr, new ArrayList<IntegerExpression>());
     variableCoefficients.get(variableExpr).add(coefficientExpr);
   }
@@ -98,10 +97,11 @@ public class Interpretations {
    * @param variableIntegerExpressions
    */
   public static void splitMultiplicationOnVariables(
-      Multiplication multiplication,
-      List<IntegerExpression> nonVariablesInChildExpressionOut,
-      List<IntegerExpression> variableInChildExpressionOut,
-      Hashtable<Variable, IVar> variableIntegerExpressions) {
+    Multiplication multiplication,
+    List<IntegerExpression> nonVariablesInChildExpressionOut,
+    List<IntegerExpression> variableInChildExpressionOut,
+    Hashtable<Variable, IVar> variableIntegerExpressions
+  ) {
     for (int multChild = 1; multChild <= multiplication.numChildren(); multChild++) {
       IntegerExpression multiplicationChild = multiplication.queryChild(multChild);
       if (variableIntegerExpressions.containsValue(multiplicationChild)) {
@@ -129,10 +129,10 @@ public class Interpretations {
    * @return A list of IntegerExpressions that do not contain variables.
    */
   public static void combineTermsOnVariables(
-      Addition addition,
-      Hashtable<Variable, IVar> variableIntegerExpressions,
-      Hashtable<IntegerExpression, List<IntegerExpression>> variableCoefficients) {
-
+    Addition addition,
+    Hashtable<Variable, IVar> variableIntegerExpressions,
+    Hashtable<IntegerExpression, List<IntegerExpression>> variableCoefficients
+  ) {
     IntegerExpression multIdentity = SmtFactory.createValue(1);
 
     for (int childIndex = 1; childIndex <= addition.numChildren(); childIndex++) {
@@ -152,14 +152,12 @@ public class Interpretations {
         case CMult cMult: // multiplication by a constant may also be a negated term
           if (cMult.queryChild() instanceof Multiplication mult) {
             // cMult is a wrapped multiplication
-            List<IntegerExpression> nonVariablesInChildExpression = new ArrayList<>();
-            List<IntegerExpression> variableInChildExpression = new ArrayList<>();
-            splitMultiplicationOnVariables(
-                mult, nonVariablesInChildExpression,
-                variableInChildExpression, variableIntegerExpressions);
+            List<IntegerExpression> nonVariables = new ArrayList<>();
+            List<IntegerExpression> variables = new ArrayList<>();
+            splitMultiplicationOnVariables(mult, nonVariables, variables, variableIntegerExpressions);
 
             // if mult has no variables (e.g. -(C0 * C1)), add to constant part
-            if (variableInChildExpression.size() == 0) {
+            if (variables.size() == 0) {
               addCoefficientToVarList(variableCoefficients, child, multIdentity);
               break;
             }
@@ -167,10 +165,12 @@ public class Interpretations {
             // if mult has variables (e.g. -(C * V)), add coefficient (-C) to variable V's
             // list
             addCoefficientToVarList(variableCoefficients,
-                SmtFactory.createMultiplication(
-                    cMult.queryConstant(),
-                    SmtFactory.createMultiplication(nonVariablesInChildExpression)).simplify(),
-                SmtFactory.createMultiplication(variableInChildExpression));
+              SmtFactory.createMultiplication(
+                cMult.queryConstant(),
+                SmtFactory.createMultiplication(nonVariables)
+              ).simplify(),
+              SmtFactory.createMultiplication(variables)
+            );
           } else {
             // cMult is a simple multiplication on a constant (e.g. -cC),
             // so we add it to the constant part
@@ -182,31 +182,30 @@ public class Interpretations {
             // cMult is a multiplication on a variable (i.e. cV),
             // so we add the integer c to V's coefficient list
             addCoefficientToVarList(variableCoefficients,
-                SmtFactory.createValue(cMult.queryConstant()),
-                cMult.queryChild());
+              SmtFactory.createValue(cMult.queryConstant()),
+              cMult.queryChild()
+            );
           }
           break;
 
         case Multiplication mult:
-          List<IntegerExpression> nonVariablesInChildExpression = new ArrayList<>();
-          List<IntegerExpression> variableInChildExpression = new ArrayList<>();
-          splitMultiplicationOnVariables(
-              mult, nonVariablesInChildExpression,
-              variableInChildExpression, variableIntegerExpressions);
+          List<IntegerExpression> nonVariables = new ArrayList<>();
+          List<IntegerExpression> variables = new ArrayList<>();
+          splitMultiplicationOnVariables(mult, nonVariables, variables, variableIntegerExpressions);
 
-          if (variableInChildExpression.size() == 0) {
+          if (variables.size() == 0) {
             addCoefficientToVarList(variableCoefficients, child, multIdentity);
             break;
           }
 
           addCoefficientToVarList(variableCoefficients,
-              SmtFactory.createMultiplication(nonVariablesInChildExpression),
-              SmtFactory.createMultiplication(variableInChildExpression));
+            SmtFactory.createMultiplication(nonVariables),
+            SmtFactory.createMultiplication(variables)
+          );
           break;
 
         default:
-          throw new IllegalStateException(
-              "Unexpected child type in combineTermsOnVariables: " + child.getClass());
+          throw new IllegalStateException("Unexpected child type in combineTermsOnVariables: " + child.getClass());
       }
     }
   }

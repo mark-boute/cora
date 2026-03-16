@@ -45,10 +45,11 @@ public class PolynomialInterpretationProcessor implements Processor {
   @Override
   public boolean isApplicable(Problem dpp) {
     return !Settings.isDisabled(queryDisabledCode()) &&
-        dpp.getOriginalTRS().verifyProperties(
-            Level.FIRSTORDER, Constrained.NO,
-            TypeLevel.SIMPLE, Lhs.PATTERN,
-            Root.FUNCTION, FreshRight.NONE);
+      dpp.getOriginalTRS().verifyProperties(
+        Level.FIRSTORDER, Constrained.NO,
+        TypeLevel.SIMPLE, Lhs.PATTERN,
+        Root.FUNCTION, FreshRight.NONE
+      );
   }
 
   /**
@@ -89,14 +90,16 @@ public class PolynomialInterpretationProcessor implements Processor {
       Hashtable<IntegerExpression, List<IntegerExpression>> variableCoefficients = new Hashtable<>();
 
       Pair<IntegerExpression, IntegerExpression> interpretationForRule = Interpretations.simplifiedIterpertationForRule(
-          rule.queryLeftSide(), rule.queryRightSide(),
-          problem, symbolArgumentWeights, variableIntegerExpressions);
+        rule.queryLeftSide(), rule.queryRightSide(),
+        problem, symbolArgumentWeights, variableIntegerExpressions
+      );
       ruleInterpretations.put(rule, interpretationForRule);
 
       // Simplify lhsCost >= rhsCost to lhsCost - rhsCost >= 0
       Addition lhsMinusRhs = (Addition) SmtFactory.createAddition(
-          interpretationForRule.left(),
-          SmtFactory.createNegation(interpretationForRule.right())).simplify();
+        interpretationForRule.left(),
+        SmtFactory.createNegation(interpretationForRule.right())
+      ).simplify();
 
       Interpretations.combineTermsOnVariables(lhsMinusRhs, variableIntegerExpressions, variableCoefficients);
 
@@ -114,15 +117,17 @@ public class PolynomialInterpretationProcessor implements Processor {
       Hashtable<IntegerExpression, List<IntegerExpression>> variableCoefficients = new Hashtable<>();
 
       Pair<IntegerExpression, IntegerExpression> interpretationForDP = Interpretations.simplifiedIterpertationForRule(
-          dp.lhs(), dp.rhs(),
-          problem, symbolArgumentWeights, variableIntegerExpressions);
+        dp.lhs(), dp.rhs(), problem, symbolArgumentWeights, variableIntegerExpressions
+      );
       dpInterpretations.put(dp, interpretationForDP);
 
       Addition lhsMinusRhs = (Addition) SmtFactory.createAddition(
-          interpretationForDP.left(),
-          SmtFactory.createNegation(interpretationForDP.right())).simplify();
+        interpretationForDP.left(), SmtFactory.createNegation(interpretationForDP.right())
+      ).simplify();
 
-      Interpretations.combineTermsOnVariables(lhsMinusRhs, variableIntegerExpressions, variableCoefficients);
+      Interpretations.combineTermsOnVariables(
+        lhsMinusRhs, variableIntegerExpressions, variableCoefficients
+      );
 
       /*
        * for DPs we require at least >= 0, but in order to reduce towards termination
@@ -141,11 +146,13 @@ public class PolynomialInterpretationProcessor implements Processor {
       // This removes the need for an indicator.
 
       IVar reductionIndicator = SmtFactory.createIntegerVariable(
-          problem, dp.lhs().queryRoot() + "_red", 0, 1);
+        problem, dp.lhs().queryRoot() + "_red", 0, 1
+      );
       dpReductionIndicators.put(dp, reductionIndicator);
 
       List<IntegerExpression> constants = variableCoefficients.getOrDefault(
-          SmtFactory.createValue(1), new ArrayList<>());
+        SmtFactory.createValue(1), new ArrayList<>()
+      );
 
       constants.add(SmtFactory.createAddition(SmtFactory.createValue(-1), reductionIndicator));
       variableCoefficients.put(SmtFactory.createValue(1), constants);
@@ -158,9 +165,10 @@ public class PolynomialInterpretationProcessor implements Processor {
 
     // Require that at least one DP is strictly decreasing
     problem.require(SmtFactory.createDisjunction(
-        dpReductionIndicators.values().stream()
-            .map((indicator) -> SmtFactory.createGreater(SmtFactory.createValue(1), indicator))
-            .toList()));
+      dpReductionIndicators.values().stream()
+        .map((indicator) -> SmtFactory.createGreater(SmtFactory.createValue(1), indicator))
+        .toList()
+      ));
 
     return switch (Settings.smtSolver.checkSatisfiability(problem)) {
       case Answer.YES(Valuation val) -> {
@@ -191,15 +199,17 @@ public class PolynomialInterpretationProcessor implements Processor {
         Hashtable<Rule, Constraint> newRuleInterpretations = new Hashtable<>();
         ruleInterpretations.forEach((rule, pair) -> {
           newRuleInterpretations.put(rule, SmtFactory.createGeq(
-              pair.left().substitute(weightAssignments).simplify(),
-              pair.right().substitute(weightAssignments).simplify()));
+            pair.left().substitute(weightAssignments).simplify(),
+            pair.right().substitute(weightAssignments).simplify()
+          ));
         });
 
         Hashtable<DP, Pair<IntegerExpression, IntegerExpression>> newDpInterpretations = new Hashtable<>();
         dpInterpretations.forEach((dp, pair) -> {
           newDpInterpretations.put(dp, new Pair<>(
-              pair.left().substitute(weightAssignments).simplify(),
-              pair.right().substitute(weightAssignments).simplify()));
+            pair.left().substitute(weightAssignments).simplify(),
+            pair.right().substitute(weightAssignments).simplify()
+          ));
         });
 
         Hashtable<FunctionSymbol, IntegerExpression> costFunctions = new Hashtable<>();
@@ -209,16 +219,19 @@ public class PolynomialInterpretationProcessor implements Processor {
           subterms.add(weights.getFirst()); // constant term
           for (int argIndex = 0; argIndex < functionSymbol.queryArity(); argIndex++) {
             subterms.add(SmtFactory.createMultiplication(
-                weights.get(argIndex + 1),
-                SmtFactory.createIntegerVariable(problem, String.valueOf((char) ('a' + argIndex)), argIndex,
-                    argIndex)));
+              weights.get(argIndex + 1),
+              SmtFactory.createIntegerVariable(
+                problem, String.valueOf((char) ('a' + argIndex)), argIndex, argIndex
+              )
+            ));
           }
           costFunctions.put(functionSymbol, SmtFactory.createAddition(subterms));
         });
 
         yield new PolynomialInterpretationProofObject(
-            dpp, indexOfOrientedDPs, costFunctions,
-            newRuleInterpretations, newDpInterpretations);
+          dpp, indexOfOrientedDPs, costFunctions,
+          newRuleInterpretations, newDpInterpretations
+        );
       }
 
       case Answer.MAYBE(String reason) -> new PolynomialInterpretationProofObject(dpp, reason);
