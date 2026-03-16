@@ -1,21 +1,19 @@
-package cora.termination.dependency_pairs.processors.tupleinterpretations;
+package cora.termination.dependency_pairs.processors.interpretations;
 
 import java.util.Hashtable;
 import java.util.Set;
-
 
 import charlie.smt.Constraint;
 import charlie.smt.IntegerExpression;
 import charlie.trs.Rule;
 import charlie.util.Pair;
 import charlie.terms.FunctionSymbol;
-import charlie.terms.Term;
 import cora.io.OutputModule;
 import cora.termination.dependency_pairs.DP;
 import cora.termination.dependency_pairs.Problem;
 import cora.termination.dependency_pairs.processors.ProcessorProofObject;
 
-public class TupleInterpretationProofObject extends ProcessorProofObject {
+public class PolynomialInterpretationProofObject extends ProcessorProofObject {
 
   private String _reason;
   private Boolean _success = false;
@@ -25,37 +23,39 @@ public class TupleInterpretationProofObject extends ProcessorProofObject {
 
   /**
    * A failed proof; SMT-Solver returned NO.
+   * 
    * @param input
    */
-  public TupleInterpretationProofObject(Problem input) {
+  public PolynomialInterpretationProofObject(Problem input) {
     super(input);
-    System.out.println("TupleInterpretationProofObject $ TODO: represent failed proof without reason");
   }
 
   /**
-   * A MAYBE proof; SMT-Solver did not find a configuration to match the constraints.
+   * A MAYBE proof; SMT-Solver did not find a configuration to match the
+   * constraints.
+   * 
    * @param input
    * @param reason The reason returned by the SMT-Solver
    */
-  public TupleInterpretationProofObject(Problem input, String reason) {
+  public PolynomialInterpretationProofObject(Problem input, String reason) {
     super(input);
     _reason = reason;
-    System.out.println("TupleInterpretationProofObject $ TODO: represent failed proof with reason: " + reason);
   }
 
   /**
    * A successful proof; SMT-Solver returned SAT.
-   * @param input The input problem
-   * @param oriented The indexes of the oriented DPs
-   * @param costFunctions The cost functions for each function symbol as interpreted by the tuple interpretation
+   * 
+   * @param input         The input problem
+   * @param oriented      The indexes of the oriented DPs
+   * @param costFunctions The cost functions for each function symbol as
+   *                      interpreted by the tuple interpretation
    */
-  public TupleInterpretationProofObject(
-    Problem input, 
-    Set<Integer> oriented, 
-    Hashtable<FunctionSymbol, IntegerExpression> costFunctions,
-    Hashtable<Rule, Constraint> ruleInterpretations,
-    Hashtable<DP, Pair<IntegerExpression, IntegerExpression>> DPInterpretations
-  ) {
+  public PolynomialInterpretationProofObject(
+      Problem input,
+      Set<Integer> oriented,
+      Hashtable<FunctionSymbol, IntegerExpression> costFunctions,
+      Hashtable<Rule, Constraint> ruleInterpretations,
+      Hashtable<DP, Pair<IntegerExpression, IntegerExpression>> DPInterpretations) {
     super(input, input.removeDPs(oriented, true));
     _success = oriented != null && !oriented.isEmpty();
     _costFunctions = costFunctions;
@@ -70,6 +70,7 @@ public class TupleInterpretationProofObject extends ProcessorProofObject {
    */
   @Override
   public void justify(OutputModule module) {
+
     if (!_success) {
       if (_reason == null) {
         module.println("No suitable tuple interpretation could be found.");
@@ -102,12 +103,11 @@ public class TupleInterpretationProofObject extends ProcessorProofObject {
     if (!_output.isEmpty()) {
       module.println("Dependency Pair interpretations for non-oriented DPs:");
 
-
       _output.getFirst().getDPList().forEach(dp -> {
         module.print("Dependency pair '%a → %a' was oriented using:\n", dp.lhs(), dp.rhs());
         module.print("\t[[%a]] >= [[%a]]", dp.lhs(), dp.rhs());
         module.print(" with\n");
-        module.println("\t%a", _DPInterpretations.get(dp));
+        module.println("\t%a >= %a", _DPInterpretations.get(dp).left(), _DPInterpretations.get(dp).right());
       });
 
     }
@@ -123,8 +123,12 @@ public class TupleInterpretationProofObject extends ProcessorProofObject {
       module.println("\t%a > %a", expressionPair.left(), expressionPair.right());
     });
 
+    module.println("Done with run, next run:");
+
   }
 
   @Override
-  public String queryProcessorName() { return "Tuple Interpretation Processor"; }
+  public String queryProcessorName() {
+    return "Polynomial Interpretation Processor";
+  }
 }
