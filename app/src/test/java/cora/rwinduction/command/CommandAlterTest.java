@@ -197,6 +197,43 @@ class CommandAlterTest {
   }
 
   @Test
+  public void testObserveWithValue() {
+    OutputModule module = OutputModule.createUnicodeModule(trs);
+    DeductionStep step = createStep(module, "alter observe x = 3");
+    assertTrue(step.toString().equals("alter observe x = 3"));
+  }
+
+  @Test
+  public void testObserveWithVariable() {
+    OutputModule module = OutputModule.createUnicodeModule(trs);
+    DeductionStep step = createStep(module, "alter observe z  = y");
+    assertTrue(step.toString().equals("alter observe z = y"));
+  }
+
+  @Test
+  public void testObserveWithIncorrectInput() {
+    OutputModule module = OutputModule.createUnicodeModule(trs);
+    assertTrue(createStep(module, "alter observe zz = y") == null);
+    assertTrue(module.toString().equals("No such variable: zz.\n\n"));
+  }
+
+  @Test
+  public void testObserveWithIncorrectSymbol() {
+    OutputModule module = OutputModule.createUnicodeModule(trs);
+    assertTrue(createStep(module, "alter observe x := y") == null);
+    assertTrue(module.toString().equals("Unexpected input at position 17; " +
+      "I expected = but got :=.\n\n"));
+  }
+
+  @Test
+  public void testObserveWithIncorrectReplacement() {
+    OutputModule module = OutputModule.createUnicodeModule(trs);
+    assertTrue(createStep(module, "alter observe x = y + 1") == null);
+    assertTrue(module.toString().equals("Replacement in ALTER OBSERVE should be a variable or " +
+      "value; y + 1 is neither!\n\n"));
+  }
+
+  @Test
   public void testConstraint() {
     OutputModule module = OutputModule.createUnicodeModule(trs);
     DeductionStep step = createStep(module, "alter constraint y < z + -1");
@@ -214,7 +251,7 @@ class CommandAlterTest {
   private ArrayList<Command.TabSuggestion> getSuggestions(String args) {
     CommandAlter cmd = new CommandAlter();
     EquationContext ec =
-      EquationParser.parseEquationData("sum1(z) = add(y,sum2(z+1)) | z ≥ 0 ∧ y < 0", trs, 1);
+      EquationParser.parseEquationData("sum1(z) = add(y,add(z+1, v)) | z ≥ 0 ∧ y < 0", trs, 1);
     OutputModule module = OutputModule.createUnicodeModule(trs);
     PartialProof proof = new PartialProof(trs, FixedList.of(ec),
                                           lst -> module.generateUniqueNaming(lst));
@@ -225,10 +262,11 @@ class CommandAlterTest {
   @Test
   public void testSuggestionEmpty() {
     ArrayList<Command.TabSuggestion> suggestions = getSuggestions("");
-    assertTrue(suggestions.size() == 3);
+    assertTrue(suggestions.size() == 4);
     assertTrue(suggestions.get(0).text().equals("add"));
     assertTrue(suggestions.get(1).text().equals("rename"));
-    assertTrue(suggestions.get(2).text().equals("constraint"));
+    assertTrue(suggestions.get(2).text().equals("observe"));
+    assertTrue(suggestions.get(3).text().equals("constraint"));
   }
 
   @Test
@@ -308,11 +346,13 @@ class CommandAlterTest {
   @Test
   public void testSuggestionOnlyRename() {
     ArrayList<Command.TabSuggestion> suggestions = getSuggestions("rename");
-    assertTrue(suggestions.size() == 2);
-    assertTrue(suggestions.get(0).text().equals("y"));
+    assertTrue(suggestions.size() == 3);
+    assertTrue(suggestions.get(0).text().equals("v"));
     assertTrue(suggestions.get(0).category().equals("existing variable name"));
-    assertTrue(suggestions.get(1).text().equals("z"));
+    assertTrue(suggestions.get(1).text().equals("y"));
     assertTrue(suggestions.get(1).category().equals("existing variable name"));
+    assertTrue(suggestions.get(2).text().equals("z"));
+    assertTrue(suggestions.get(2).category().equals("existing variable name"));
   }
 
   @Test
@@ -344,11 +384,49 @@ class CommandAlterTest {
   @Test
   public void testRenameSuggestionPastComma() {
     ArrayList<Command.TabSuggestion> suggestions = getSuggestions("rename x := y, ");
+    assertTrue(suggestions.size() == 3);
+    assertTrue(suggestions.get(0).text().equals("v"));
+    assertTrue(suggestions.get(0).category().equals("existing variable name"));
+    assertTrue(suggestions.get(1).text().equals("y"));
+    assertTrue(suggestions.get(1).category().equals("existing variable name"));
+    assertTrue(suggestions.get(2).text().equals("z"));
+    assertTrue(suggestions.get(2).category().equals("existing variable name"));
+  }
+
+  @Test
+  public void testSuggestionOnlyObserve() {
+    ArrayList<Command.TabSuggestion> suggestions = getSuggestions("observe");
     assertTrue(suggestions.size() == 2);
     assertTrue(suggestions.get(0).text().equals("y"));
-    assertTrue(suggestions.get(0).category().equals("existing variable name"));
+    assertTrue(suggestions.get(0).category().equals("existing theory variable"));
     assertTrue(suggestions.get(1).text().equals("z"));
-    assertTrue(suggestions.get(1).category().equals("existing variable name"));
+    assertTrue(suggestions.get(1).category().equals("existing theory variable"));
+  }
+
+  @Test
+  public void testSuggestionObserveWithVariable() {
+    ArrayList<Command.TabSuggestion> suggestions = getSuggestions("observe y");
+    assertTrue(suggestions.size() == 1);
+    assertTrue(suggestions.get(0).text().equals("="));
+    assertTrue(suggestions.get(0).category().equals("keyword"));
+  }
+
+  @Test
+  public void testSuggestionObserveWithVariableAndEquality() {
+    ArrayList<Command.TabSuggestion> suggestions = getSuggestions("observe y=");
+    assertTrue(suggestions.size() == 2);
+    assertTrue(suggestions.get(0).text().equals("z"));
+    assertTrue(suggestions.get(0).category().equals("variable"));
+    assertTrue(suggestions.get(1).text() == null);
+    assertTrue(suggestions.get(1).category().equals("value"));
+  }
+
+  @Test
+  public void testSuggestionObserveComplete() {
+    ArrayList<Command.TabSuggestion> suggestions = getSuggestions("observe y =23");
+    assertTrue(suggestions.size() == 1);
+    assertTrue(suggestions.get(0).text() == null);
+    assertTrue(suggestions.get(0).category().equals("end of command"));
   }
 
   @Test
