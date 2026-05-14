@@ -794,7 +794,7 @@ public class CoraParser {
         else symbols.put(decl.name(), decl);
       }
     }
-    return new ParserProgram(symbols.build(), rules.build());
+    return new ParserProgram(symbols.build(), rules.build(), TrsFormat.UNKNOWN);
   }
 
   // ====================================== PUBLIC FUNCTIONS ======================================

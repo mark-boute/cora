@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2024--2025 Cynthia Kop
+ Copyright 2024--2026 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -34,7 +34,6 @@ import charlie.parser.Parser.*;
 public class AriParser {
   private ParsingStatus _status;
   private TreeSet<String> _sorts;
-  private enum TrsFormat { HigherOrder };
 
   /**
    * Stores the parsing status for use by methods of the AriParser class.
@@ -178,7 +177,8 @@ public class AriParser {
     Token tmp = _status.expect(AriTokenData.IDENTIFIER, "identifier describing the format");
     _status.expect(AriTokenData.BRACKETCLOSE, "closing bracket");
     if (tmp == null) return null; // an error has already been stored
-    if (tmp.getText().equals("higher-order")) return TrsFormat.HigherOrder;
+    if (tmp.getText().equals("higher-order")) return TrsFormat.AMS;
+    if (tmp.getText().equals("TRS")) return TrsFormat.MSTRS;
     _status.storeError(tmp, "Format is not currently supported: " + tmp.getText());
     return null;
   }
@@ -208,7 +208,7 @@ public class AriParser {
    * This reads 0 or more function declarations, and stores each declaration both in the given
    * symbol map.
    *
-   * Grammar: ( FUN IDENTIFIER type )
+   * Grammar: ( FUN IDENTIFIER type ) | ( FUN IDENTIFIER NUMBER )
    */
   private void readDeclarations(LookupMap.Builder<ParserDeclaration> symbols) {
     while (true) {
@@ -218,9 +218,11 @@ public class AriParser {
         _status.pushBack(open);
         return;
       }
-      // we have read: ( FUN.  Now the next parts have to be an IDENTIFIER and a type.
+      // we have read: ( FUN.  Now the next parts have to be an IDENTIFIER and a type or arity.
       Token name = _status.expect(AriTokenData.IDENTIFIER, "identifier (symbol name)");
-      Type type = name == null ? null : readType();
+      Token num = name == null ? null : _status.readNextIf(AriTokenData.NUMBER);
+      Type type = name == null ? null : num == null ? readType() :
+        TypeFactory.createDefaultArrow(Integer.parseInt(num.getText()));
       _status.expect(AriTokenData.BRACKETCLOSE, "closing bracket");
       if (name != null && type != null) {
         String n = name.getText();
@@ -276,7 +278,7 @@ public class AriParser {
     // read all the rules
     readRules(rules);
 
-    return new ParserProgram(symbols.build(), rules.build());
+    return new ParserProgram(symbols.build(), rules.build(), format);
   }
 
   // ====================================== PUBLIC FUNCTIONS ======================================

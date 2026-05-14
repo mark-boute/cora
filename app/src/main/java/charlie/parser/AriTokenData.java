@@ -32,6 +32,7 @@ public class AriTokenData {
   public static String BRACKETOPEN    = "BRACKETOPEN";
   public static String BRACKETCLOSE   = "BRACKETCLOSE";
   public static String ARROW          = "ARROW";
+  public static String NUMBER         = "NUMBER";
 
   private static String _letter = "[a-z]|[A-Z]";
   private static String _legalchar = "~|!|@|\\$|%|\\^|&|\\*|_|-|\\+|=|<|>|\\.|\\?|\\/";
@@ -48,6 +49,7 @@ public class AriTokenData {
     "->"                                    , ARROW,
     "(" + _letter + "|" + _legalchar + ")(" + _letter + "|" + _legalchar + "|" + _digit + ")*"
                                             , IDENTIFIER,
+    "0|[1-9][0-9]*"                         , NUMBER,
     "\\("                                   , BRACKETOPEN,
     "\\)"                                   , BRACKETCLOSE,
     "\\s"                                   , Token.SKIP,

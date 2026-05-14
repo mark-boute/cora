@@ -53,8 +53,17 @@ public class AriTokensTest {
   @Test
   public void testIdentifierCannotStartWithDigit() throws LexerException {
     Lexer lexer = createLexer("1ab3");
-    assertThrows(LexerException.class, () -> lexer.nextToken());
+    assertTrue(lexer.nextToken().toString().equals("1:1: 1 (NUMBER)"));
     assertTrue(lexer.nextToken().toString().equals("1:2: ab3 (IDENTIFIER)"));
+  }
+
+  @Test
+  public void testReadNumber() {
+    Lexer lexer = createLexer("00");
+    assertTrue(lexer.nextToken().toString().equals("1:1: 0 (NUMBER)"));
+    assertTrue(lexer.nextToken().toString().equals("1:2: 0 (NUMBER)"));
+    lexer = createLexer("70");
+    assertTrue(lexer.nextToken().toString().equals("1:1: 70 (NUMBER)"));
   }
 
   @Test
