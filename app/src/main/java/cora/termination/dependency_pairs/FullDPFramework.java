@@ -54,6 +54,7 @@ public class FullDPFramework extends DPFramework {
   }
 
   protected Processor getProcessor(int index) {
+    System.out.println("NOTE: Processor index still pinned to 0!");
     return _processors[0];
   }
 
