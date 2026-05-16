@@ -4,7 +4,9 @@ import java.util.Hashtable;
 import java.util.Set;
 
 import charlie.smt.Constraint;
+import charlie.smt.ConstraintPrinter;
 import charlie.smt.IntegerExpression;
+import charlie.smt.IExpPrinter;
 import charlie.trs.Rule;
 import charlie.util.Pair;
 import charlie.terms.FunctionSymbol;
@@ -71,6 +73,9 @@ public class PolynomialInterpretationProofObject extends ProcessorProofObject {
   @Override
   public void justify(OutputModule module) {
 
+    IExpPrinter iExpPrinter = new IExpPrinter();
+    ConstraintPrinter constraintPrinter = new ConstraintPrinter();
+
     if (!_success) {
       if (_reason == null) {
         module.println("No suitable tuple interpretation could be found.");
@@ -87,7 +92,7 @@ public class PolynomialInterpretationProofObject extends ProcessorProofObject {
     _costFunctions.forEach((term, expr) -> {
       module.nextColumn("J(%a)", term);
       module.nextColumn("=");
-      module.println("%a", expr);
+      module.println(iExpPrinter.print(expr));
     });
 
     module.endTable();
@@ -97,7 +102,7 @@ public class PolynomialInterpretationProofObject extends ProcessorProofObject {
     _ruleInterpretations.forEach((rule, constraint) -> {
       module.print("Rule '%a' was oriented using: ", rule);
       module.print("[[%a]] >= [[%a]]", rule.queryLeftSide(), rule.queryRightSide());
-      module.println(", interpreted as %a", constraint);
+      module.println(", interpreted as %a", constraintPrinter.print(constraint));
     });
 
     if (!_output.isEmpty()) {
@@ -107,7 +112,7 @@ public class PolynomialInterpretationProofObject extends ProcessorProofObject {
         module.print("Dependency pair '%a → %a' was oriented using:\n", dp.lhs(), dp.rhs());
         module.print("\t[[%a]] >= [[%a]]", dp.lhs(), dp.rhs());
         module.print(" with\n");
-        module.println("\t%a >= %a", _DPInterpretations.get(dp).left(), _DPInterpretations.get(dp).right());
+        module.println("\t%a >= %a", iExpPrinter.print(_DPInterpretations.get(dp).left()), iExpPrinter.print(_DPInterpretations.get(dp).right()));
       });
 
     }
@@ -120,7 +125,7 @@ public class PolynomialInterpretationProofObject extends ProcessorProofObject {
       module.print("Dependency pair '%a → %a' was strictly oriented using:\n", dp.lhs(), dp.rhs());
       module.print("\t[[%a]] > [[%a]]", dp.lhs(), dp.rhs());
       module.print(" with\n");
-      module.println("\t%a > %a", expressionPair.left(), expressionPair.right());
+      module.println("\t%a > %a", iExpPrinter.print(expressionPair.left()), iExpPrinter.print(expressionPair.right()));
     });
 
     module.println("Done with run, next run:");
