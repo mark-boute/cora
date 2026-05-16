@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2024 Cynthia Kop
+ Copyright 2024--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -16,8 +16,8 @@
 package charlie.terms;
 
 import java.util.Map;
-import charlie.exceptions.InappropriatePatternDataException;
 import charlie.types.Type;
+import charlie.terms.replaceable.ReplaceableList;
 
 /** A Constant that happens to be a Calculation Symbol. */
 public class CalculationConstant extends LeafTermInherit implements CalculationSymbol {
@@ -96,19 +96,9 @@ public class CalculationConstant extends LeafTermInherit implements CalculationS
                                             "meta-variable applications (or terms headed by one)");
   }
 
-  /** Returns the current value unmodified (there is nothing to substitute in a function symbol). */
-  public Term substitute(Substitution gamma) {
+  /** There are no binders to rename in function symbols, so this returns the symbol unmodified. */
+  public CalculationSymbol renameAndRefreshBinders(Map<Variable,Variable> renaming) {
     return this;
-  }
-
-  /**
-   * This method checks that other is the same calculation symbol. If so, null is returned,
-   * otherwise a description of the instantiation failure.
-   */
-  public String match(Term other, Substitution gamma) {
-    if (other == null) throw new NullPointerException("Other term in CalculationConstant::match");
-    if (equals(other)) return null;
-    return "calculation symbol " + _name + " is not instantiated by " + other.toString() + ".";
   }
 
   /** f =_α^{μ,ξ,k} t if and only if f and t are the same value. */

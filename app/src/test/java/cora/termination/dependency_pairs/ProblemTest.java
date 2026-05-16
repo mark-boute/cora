@@ -15,8 +15,10 @@
 
 package cora.termination.dependency_pairs;
 
-import charlie.exceptions.NullStorageException;
+import charlie.util.FixedList;
+import charlie.util.NullStorageException;
 import charlie.types.TypeFactory;
+import charlie.terms.replaceable.MutableRenaming;
 import charlie.terms.*;
 import charlie.trs.*;
 import charlie.reader.CoraInputReader;
@@ -41,31 +43,31 @@ public class ProblemTest {
     "eval(x, y) -> eval(x - 1, y) | x>y\n");
 
   private DP createDP1() {
-    Renaming renaming = new Renaming(Set.of());
-    Term lhs = CoraInputReader.readTerm("eval#(x, y)", renaming, true, trs);
-    Term rhs = CoraInputReader.readTerm("eval#(x-1, y)", renaming, true, trs);
-    Term constraint = CoraInputReader.readTerm("x > y", renaming, true, trs);
+    MutableRenaming renaming = new MutableRenaming(Set.of());
+    Term lhs = CoraInputReader.readTermAndUpdateNaming("eval#(x, y)", renaming, trs);
+    Term rhs = CoraInputReader.readTerm("eval#(x-1, y)", renaming, trs);
+    Term constraint = CoraInputReader.readTerm("x > y", renaming, trs);
     return new DP(lhs, rhs, constraint);
   }
 
   private DP createDP2() {
-    Renaming renaming = new Renaming(Set.of());
-    Term lhs = CoraInputReader.readTerm("add#(suc(x), y)", renaming, true, trs);
-    Term rhs = CoraInputReader.readTerm("add#(x, y)", renaming, true, trs);
+    MutableRenaming renaming = new MutableRenaming(Set.of());
+    Term lhs = CoraInputReader.readTermAndUpdateNaming("add#(suc(x), y)", renaming, trs);
+    Term rhs = CoraInputReader.readTerm("add#(x, y)", renaming, trs);
     return new DP(lhs, rhs);
   }
 
   private DP createDP3() {
-    Renaming renaming = new Renaming(Set.of());
-    Term lhs = CoraInputReader.readTerm("mul#(suc(x), y)", renaming, true, trs);
-    Term rhs = CoraInputReader.readTerm("add#(x, mul(x, y))", renaming, true, trs);
+    MutableRenaming renaming = new MutableRenaming(Set.of());
+    Term lhs = CoraInputReader.readTermAndUpdateNaming("mul#(suc(x), y)", renaming, trs);
+    Term rhs = CoraInputReader.readTerm("add#(x, mul(x, y))", renaming, trs);
     return new DP(lhs, rhs);
   }
 
   @Test
   void testCreateProblem() {
     List<DP> dps = List.of(createDP1(), createDP2(), createDP3());
-    List<Rule> rules = trs.queryRules();
+    FixedList<Rule> rules = trs.queryRules();
     Set<Integer> priv = Set.of(1);
     Problem problem = new Problem(dps, rules, priv, trs, false, true,
                                   Problem.TerminationFlag.Computable);
@@ -81,9 +83,9 @@ public class ProblemTest {
     assertFalse(problem.isEmpty());
     assertTrue(problem.toString(true).equals(
       "DPs:\n" +
-      "  eval#(x, y) => eval#(x - 1, y) | x > y { }\n" +
-      "  add#(suc(x), y) => add#(x, y) | true { } (private)\n" +
-      "  mul#(suc(x), y) => add#(x, mul(x, y)) | true { }\n" +
+      "  eval#(x, y) ➡ eval#(x - 1, y) | x > y\n" +
+      "  add#(suc(x), y) ➡ add#(x, y) | true (private)\n" +
+      "  mul#(suc(x), y) ➡ add#(x, mul(x, y)) | true\n" +
       "Rules:\n" +
       "  mul(zero, x) → x\n" +
       "  mul(suc(x), y) → add(y, mul(x, y))\n" +
@@ -97,7 +99,7 @@ public class ProblemTest {
   @Test
   public void testProblemWithNullPrivates() {
     List<DP> dps = List.of(createDP1(), createDP2(), createDP3());
-    List<Rule> rules = trs.queryRules();
+    FixedList<Rule> rules = trs.queryRules();
     Problem problem = new Problem(dps, rules, null, trs, true, false,
                                   Problem.TerminationFlag.Arbitrary);
     assertFalse(problem.hasExtraRules());
@@ -112,7 +114,7 @@ public class ProblemTest {
   @Test
   public void testHeads() {
     List<DP> dps = List.of(createDP1(), createDP2(), createDP2());
-    List<Rule> rules = trs.queryRules();
+    FixedList<Rule> rules = trs.queryRules();
     Set<Integer> priv = Set.of();
     Problem problem = new Problem(dps, rules, priv, trs, false, true,
                                   Problem.TerminationFlag.Computable);
@@ -125,7 +127,7 @@ public class ProblemTest {
   @Test
   public void testHeadsNonRec() {
     List<DP> dps = List.of(createDP3());
-    List<Rule> rules = trs.queryRules();
+    FixedList<Rule> rules = trs.queryRules();
     Set<Integer> priv = Set.of();
     Problem problem = new Problem(dps, rules, priv, trs, false, true,
       Problem.TerminationFlag.Computable);
@@ -138,7 +140,7 @@ public class ProblemTest {
   @Test
   public void testNullCreation() {
     List<DP> dps = List.of(createDP1(), createDP2(), createDP2());
-    List<Rule> rules = trs.queryRules();
+    FixedList<Rule> rules = trs.queryRules();
     Set<Integer> priv = Set.of();
     assertThrows(NullStorageException.class, () ->
       new Problem(null, rules, priv, trs, false, true, Problem.TerminationFlag.Terminating));
@@ -156,7 +158,7 @@ public class ProblemTest {
     DP dp2 = createDP3();
     DP dp3 = createDP1();
     List<DP> dps = List.of(dp0, dp1, dp2, dp3);
-    List<Rule> rules = trs.queryRules();
+    FixedList<Rule> rules = trs.queryRules();
     Set<Integer> priv = Set.of(0, 2);
     Problem problem = new Problem(dps, rules, priv, trs, false, true,
                                   Problem.TerminationFlag.Computable);

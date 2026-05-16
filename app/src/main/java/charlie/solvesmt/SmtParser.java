@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2024 Cynthia Kop
+ Copyright 2024--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -78,7 +78,7 @@ class SmtParser {
       String unistring = getUnicodeSubstring(txt, j + 2);
       String transl = unistring == null || unistring.length() == 0 ? null : doTranslate(unistring);
       if (transl == null) {
-        _status.storeError("Poorly formed string constant: " + txt.substring(j), tok);
+        _status.storeError(tok, "Poorly formed string constant: " + txt.substring(j));
         return builder.toString();
       }
       builder.append(transl);
@@ -107,7 +107,7 @@ class SmtParser {
       return new SExpression.SExpList(parts);
     }
     tok = _status.nextToken();
-    _status.storeError("Unexpected token: expected numeral, identifier or bracketed list.", tok);
+    _status.storeError(tok, "Unexpected token: expected numeral, identifier or bracketed list.");
     return new SExpression.Symbol(tok.getText());
   }
 
@@ -124,7 +124,7 @@ class SmtParser {
 
   /**
    * Reads an S-expression from the given string.
-   * @throws charlie.exceptions.ParseException
+   * @throws charlie.parser.lib.ParsingException
    */
   public static SExpression readExpressionFromString(String str) {
     ParsingStatus status = new ParsingStatus(SmtTokenData.getStringLexer(str), 1);
@@ -137,7 +137,7 @@ class SmtParser {
 
   /**
    * Reads a list of S-expressions from the given string.
-   * @throws charlie.exceptions.ParseException
+   * @throws charlie.parser.lib.ParsingException
    */
   public static List<SExpression> readExpressionsFromString(String str) {
     ParsingStatus status = new ParsingStatus(SmtTokenData.getStringLexer(str), 1);
@@ -150,7 +150,7 @@ class SmtParser {
 
   /**
    * Reads a list of S-expressions from the given file.
-   * @throws charlie.exceptions.ParseException
+   * @throws charlie.parser.lib.ParsingException
    */
   public static List<SExpression> readExpressionsFromFile(String filename) throws IOException {
     ParsingStatus status = new ParsingStatus(SmtTokenData.getFileLexer(filename), 1);

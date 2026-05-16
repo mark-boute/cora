@@ -41,21 +41,22 @@ public class FullDPFramework extends DPFramework {
     _processors = new Processor[] {
         // new TupleInterpretationProcessor(),
         new PolynomialInterpretationProcessor(),
-        // new SplittingProcessor(),
-        // new TheoryArgumentsProcessor(true),
-        // new ReachabilityProcessor(),
-        // new GraphProcessor(),
-        // new SubtermProcessor(),
-        // new TheoryArgumentsProcessor(false),
-        // new IntegerMappingProcessor(),
-        // new ReductionPairProcessor(new Horpo(false))
+        new SplittingProcessor(),
+        new TheoryArgumentsProcessor(true),
+        new ReachabilityProcessor(),
+        new GraphProcessor(),
+        new SubtermProcessor(),
+        new TheoryArgumentsProcessor(false),
+        new IntegerMappingProcessor(),
+        new ReductionPairProcessor(new Horpo(false))
       };
     RESTARTLOOP = 3;
   }
 
   protected Processor getProcessor(int index) {
-    System.out.println("NOTE: Processor index still pinned to 0!");
-    return _processors[0];
+    // System.out.println("NOTE: Processor index still pinned to 0!");
+    // return _processors[0];
+    return _processors[index];
   }
 
   protected int getInitialProcessorIndex(Problem initialProblem) {

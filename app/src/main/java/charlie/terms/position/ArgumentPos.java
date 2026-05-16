@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,7 +15,7 @@
 
 package charlie.terms.position;
 
-import charlie.exceptions.NullStorageException;
+import charlie.util.NullStorageException;
 
 public record ArgumentPos(int index, Position tail) implements Position {
   public ArgumentPos(int index, Position tail) {
@@ -29,15 +29,18 @@ public record ArgumentPos(int index, Position tail) implements Position {
     this.tail = tail;
   }
 
-  public String toString() {
-    return "" + index + "." + tail.toString();
-  }
+  public String toString() { return toStringDefault(); }
 
   public boolean equals(Position other) {
     switch (other) {
       case ArgumentPos(int id, Position tl): return index == id && tail.equals(tl);
       default: return false;
     }
+  }
+
+  public boolean equals(Object other) {
+    if (other instanceof Position p) return equals(p);
+    return false;
   }
 
   public int hashCode() {
@@ -50,6 +53,17 @@ public record ArgumentPos(int index, Position tail) implements Position {
     return new ArgumentPos(this.index, this.tail.append(p));
   }
 
+  public int queryChopCount() {
+    return tail.queryChopCount();
+  }
+
+  public int compareTo(Position other) {
+    if (other.isFinal()) return 1;
+    int c = this.index - other.queryHead();
+    if (c != 0) return c;
+    return this.tail.compareTo(other.queryTail());
+  }
+
   public int queryHead() {
     return index;
   }
@@ -58,3 +72,4 @@ public record ArgumentPos(int index, Position tail) implements Position {
     return tail;
   }
 }
+

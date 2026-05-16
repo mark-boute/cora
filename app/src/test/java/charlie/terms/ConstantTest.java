@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2019--2024 Cynthia Kop
+ Copyright 2019--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -21,7 +21,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.TreeMap;
-import charlie.exceptions.*;
+import charlie.util.NullStorageException;
 import charlie.types.Type;
 import charlie.types.TypeFactory;
 import charlie.terms.position.*;
@@ -45,7 +45,7 @@ public class ConstantTest extends TermTestFoundation {
   @Test
   public void testBaseConstantApply() {
     FunctionSymbol c = new Constant("c", baseType("o"));
-    assertThrows(ArityException.class, () -> c.apply(new Constant("a", baseType("o"))));
+    assertThrows(TypingException.class, () -> c.apply(new Constant("a", baseType("o"))));
   }
 
   @Test
@@ -126,7 +126,8 @@ public class ConstantTest extends TermTestFoundation {
     Type b = baseType("b");
     Type combi = arrowType(a, b);
     Constant f = new Constant("f", combi);
-    assertThrows(IndexingException.class, () -> f.querySubterm(new ArgumentPos(1, Position.empty)));
+    assertThrows(InvalidPositionException.class, () ->
+      f.querySubterm(new ArgumentPos(1, Position.empty)));
   }
 
   @Test
@@ -135,7 +136,8 @@ public class ConstantTest extends TermTestFoundation {
     Type b = baseType("b");
     Type combi = arrowType(a, b);
     Constant f = new Constant("f", combi);
-    assertThrows(IndexingException.class, () -> f.querySubterm(new FinalPos(1)));
+    assertThrows(InvalidPositionException.class, () ->
+      f.querySubterm(new FinalPos(1)));
   }
 
   @Test
@@ -144,14 +146,14 @@ public class ConstantTest extends TermTestFoundation {
     Type b = baseType("b");
     Type combi = arrowType(a, b);
     Constant f = new Constant("f", combi);
-    assertThrows(IndexingException.class, () -> 
+    assertThrows(InvalidPositionException.class, () -> 
       f.replaceSubterm(new LambdaPos(Position.empty), new Constant("a", a)));
   }
 
   @Test
   public void testBadPartialPositionReplacement() {
     Constant f = new Constant("f", baseType("a"));
-    assertThrows(IndexingException.class, () -> 
+    assertThrows(InvalidPositionException.class, () -> 
       f.replaceSubterm(new FinalPos(1), new Constant("a", baseType("a"))));
   }
 
@@ -175,16 +177,13 @@ public class ConstantTest extends TermTestFoundation {
     assertTrue(f.queryRoot().equals(f));
     assertFalse(f.isFirstOrder());
     assertTrue(f.isPattern());
-    assertTrue(f.refreshBinders() == f);
-    Subst gamma = new Subst(x, new Constant("gg", combi));
-    assertTrue(f.substitute(gamma).equals(f));
+    assertTrue(f.renameAndRefreshBinders(new TreeMap<Variable,Variable>()) == f);
     assertTrue(f.freeReplaceables().size() == 0);
     assertTrue(f.boundVars().size() == 0);
     assertTrue(f.hasSubterm(f));
     Term aa = new Constant("g", a);
     assertTrue(aa.isFirstOrder());
     assertTrue(aa.isPattern());
-    assertTrue(f.refreshBinders() == f);
     String s = null;
     assertFalse(f.equals(s));
     assertFalse(f.hasSubterm(aa));
@@ -233,8 +232,6 @@ public class ConstantTest extends TermTestFoundation {
 
     assertFalse(f.equals(fa));
     assertTrue(fa.equals(g.apply(new Constant("aa", a))));
-
-    assertTrue(f.match(g) != null);
   }
 
   @Test

@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2024 Cynthia Kop
+ Copyright 2024--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,13 +15,14 @@
 
 package charlie.parser;
 
-import com.google.common.collect.ImmutableList;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.TreeSet;
 
+import charlie.util.FixedList;
 import charlie.util.LookupMap;
-import charlie.types.*;
+import charlie.types.Type;
+import charlie.types.TypeFactory;
 import charlie.parser.lib.*;
 import charlie.parser.InfixManager.OperatorData;
 import charlie.parser.Parser.*;
@@ -71,7 +72,7 @@ public class AriParser {
     Token base = _status.readNextIf(AriTokenData.IDENTIFIER);
     if (base != null) {
       String name = base.getText();
-      if (!_sorts.contains(name)) _status.storeError("Undeclared sort: " + name, base);
+      if (!_sorts.contains(name)) _status.storeError(base, "Undeclared sort: " + name);;
       return TypeFactory.createSort(name);
     }
     // remaining case: ( ARROW type+ IDENTIFIER )
@@ -84,7 +85,7 @@ public class AriParser {
       if (arg == null) { readUntilCloseBracket(); return null; }
       parts.add(arg);
     } while (_status.readNextIf(AriTokenData.BRACKETCLOSE) == null);
-    if (parts.size() == 0) { _status.storeError("Empty type", open); return null; }
+    if (parts.size() == 0) { _status.storeError(open, "Empty type"); return null; }
     Type ret = parts.get(parts.size() -1 );
     for (int i = parts.size()-2; i >= 0; i--) ret = TypeFactory.createArrow(parts.get(i), ret);
     return ret;
@@ -116,15 +117,15 @@ public class AriParser {
     // case: ( IDENTIFIER term+ )
     Token main = _status.readNextIf(AriTokenData.IDENTIFIER);
     if (main != null) {
-      ImmutableList.Builder<ParserTerm> builder = ImmutableList.<ParserTerm>builder();
+      FixedList.Builder<ParserTerm> builder = new FixedList.Builder<ParserTerm>();
       while (_status.readNextIf(AriTokenData.BRACKETCLOSE) == null) {
         ParserTerm arg = readTerm();
         if (arg == null) { readUntilCloseBracket(); break; }
         builder.add(arg);
       }
-      ImmutableList<ParserTerm> args = builder.build();
+      FixedList<ParserTerm> args = builder.build();
       if (args.size() == 0) {
-        _status.storeError("Identifier without arguments should not be in brackets.", main);
+        _status.storeError(main, "Identifier without arguments should not be in brackets.");
       }
       ParserTerm head = new Identifier(main, main.getText());
       return new Application(main, head, args);
@@ -138,7 +139,7 @@ public class AriParser {
     reallyExpectClosingBracket();
     if (term == null) return null;
     if (vars.size() == 0) {
-      _status.storeError("Lambda should have at least one variable.", lambda);
+      _status.storeError(lambda, "Lambda should have at least one variable.");
       return term;
     }
     for (int i = vars.size()-1; i >= 0; i--) {
@@ -178,7 +179,7 @@ public class AriParser {
     _status.expect(AriTokenData.BRACKETCLOSE, "closing bracket");
     if (tmp == null) return null; // an error has already been stored
     if (tmp.getText().equals("higher-order")) return TrsFormat.HigherOrder;
-    _status.storeError("Format is not currently supported: " + tmp.getText(), tmp);
+    _status.storeError(tmp, "Format is not currently supported: " + tmp.getText());
     return null;
   }
 
@@ -224,7 +225,7 @@ public class AriParser {
       if (name != null && type != null) {
         String n = name.getText();
         if (symbols.containsKey(n)) {
-          _status.storeError("Duplicate definition of function symbol " + n, name);
+          _status.storeError(name, "Duplicate definition of function symbol " + n);
         }
         else symbols.put(n, new ParserDeclaration(name, n, type));
       }
@@ -236,7 +237,7 @@ public class AriParser {
    *
    * Grammar: ( RULE term term )
    */
-  private void readRules(ImmutableList.Builder<ParserRule> rules) {
+  private void readRules(FixedList.Builder<ParserRule> rules) {
     Token ruletok;
     while (true) {
       Token open = _status.readNextIf(AriTokenData.BRACKETOPEN);
@@ -259,7 +260,7 @@ public class AriParser {
 
   private ParserProgram readTRS() {
     LookupMap.Builder<ParserDeclaration> symbols = new LookupMap.Builder<ParserDeclaration>();
-    ImmutableList.Builder<ParserRule> rules = ImmutableList.<ParserRule>builder();
+    FixedList.Builder<ParserRule> rules = new FixedList.Builder<ParserRule>();
 
     // read format line
     TrsFormat format = readFormat();
@@ -292,15 +293,15 @@ public class AriParser {
 
   /**
    * Reads a full TRS from the given string, saving errors to the given collector.
-   * @throws charlie.exceptions.ParseException
+   * @throws ParsingException
    */
   public static ParserProgram readProgramFromString(String str, ErrorCollector collector) {
     return readProgram(AriTokenData.getStringLexer(str), collector);
   }
 
   /**
-   * Reads a full TRS from the given string, throwing a ParseException if any are encountered.
-   * @throws charlie.exceptions.ParseException
+   * Reads a full TRS from the given string, throwing a ParsingException if any are encountered.
+   * @throws ParsingException
    */
   public static ParserProgram readProgramFromString(String str) {
     return readProgramFromString(str, null);
@@ -308,7 +309,7 @@ public class AriParser {
 
   /**
    * Reads a full TRS from the given file, saving errors to the given collector.
-   * @throws charlie.exceptions.ParseException
+   * @throws ParsingException
    */
   public static ParserProgram readProgramFromFile(String filename,
                                                   ErrorCollector coll) throws IOException {

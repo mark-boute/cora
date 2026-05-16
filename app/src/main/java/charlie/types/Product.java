@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,12 +15,10 @@
 
 package charlie.types;
 
-import com.google.common.collect.ImmutableList;
+import charlie.util.NullStorageException;
+import charlie.util.FixedList;
 
-import charlie.exceptions.IndexingException;
-import charlie.exceptions.NullStorageException;
-
-public record Product(ImmutableList<Type> types) implements Type {
+public record Product(FixedList<Type> types) implements Type {
   public Product {
     if (types == null) throw new NullStorageException("Product", "product list");
     if (types.size() < 2) throw new IllegalArgumentException("product list has size " +
@@ -53,14 +51,14 @@ public record Product(ImmutableList<Type> types) implements Type {
   @Override
   public boolean equals(Type type) {
     switch (type) {
-      case Product(ImmutableList<Type> componentTypes):
-        if (this.types.size() != componentTypes.size()) return false;
-        for (int i = 0; i < this.types.size(); i++) {
-          if (!this.types.get(i).equals(componentTypes.get(i))) return false;
-        }
-        return true;
+      case Product(FixedList<Type> componentTypes): return this.types.equals(componentTypes);
       default: return false;
     }
+  }
+
+  @Override
+  public boolean equals(Object other) {
+    return other instanceof Type t && equals(t);
   }
 
   @Override
@@ -91,8 +89,10 @@ public record Product(ImmutableList<Type> types) implements Type {
   @Override
   public Type subtype(int index) {
     if (index <= 0 || index > this.types.size()) {
-      throw new IndexingException("Product", "subtype", index, 1, this.types.size());
+      throw new IndexOutOfBoundsException("Product::subtype called with index " + index +
+        "on tuple type [" + toString() + "] with " + this.types.size() + " elements.");
     }
     return this.types.get(index-1);
   }
 }
+

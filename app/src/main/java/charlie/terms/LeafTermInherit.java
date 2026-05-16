@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2019--2024 Cynthia Kop
+ Copyright 2019--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -17,8 +17,8 @@ package charlie.terms;
 
 import java.util.ArrayList;
 import java.util.Set;
-import charlie.exceptions.*;
 import charlie.util.Pair;
+import charlie.util.NullStorageException;
 import charlie.types.Type;
 import charlie.terms.position.Position;
 
@@ -60,12 +60,13 @@ abstract class LeafTermInherit extends TermInherit {
 
   /** Throws an error, since there are no non-empty positions in a leaf term */
   public Term querySubtermMain(Position pos) {
-    throw new IndexingException(queryMyClassName(), "querySubterm", toString(), pos.toString());
+    throw new InvalidPositionException(this, pos, "cannot query a strict subterm of a leaf term.");
   }
 
   /** Throws an error, since there are no non-empty positions in a leaf term */
   public Term replaceSubtermMain(Position pos, Term replacement) {
-    throw new IndexingException(queryMyClassName(), "replaceSubterm", toString(), pos.toString());
+    throw new InvalidPositionException(this, pos,
+      "cannot replace a strict subterm of a leaf term.");
   }
 }
 

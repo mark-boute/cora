@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,12 +15,13 @@
 
 package charlie.reader;
 
-import com.google.common.collect.ImmutableList;
 import java.util.ArrayList;
 
-import charlie.exceptions.*;
+import charlie.util.FixedList;
+import charlie.util.UserException;
 import charlie.types.*;
 import charlie.parser.lib.Token;
+import charlie.parser.lib.ParsingErrorMessage;
 import charlie.parser.lib.ErrorCollector;
 import charlie.parser.Parser.*;
 import charlie.parser.CoraParser;
@@ -53,9 +54,18 @@ class TermTyper {
     _lastStored = null;
   }
 
-  protected void storeError(String message, Token token) {
-    if (token == _lastStored) return;
-    _errors.addError(token.getPosition() + ": " + message);
+  /**
+   * Stores an error at the given location.  The token is allowed to be null, but the message
+   * should have at least one component.  The message could consist of strings, but also for
+   * instance terms or types, which the managing classes can print using the relevant Printer
+   * classes (in accordance with user settings).
+   */
+  protected void storeError(Token token, Object ...message) {
+    if (token != null && token == _lastStored) return;
+    if (message.length == 1 && message[0] instanceof UserException e) {
+      _errors.addError(new ParsingErrorMessage(token, e));
+    }
+    else _errors.addError(new ParsingErrorMessage(token, message));
     _lastStored = token;
   }
 
@@ -83,7 +93,7 @@ class TermTyper {
         Term ret = null;
         try { ret = TheoryFactory.createEscapedStringValue(txt); }
         catch (IncorrectStringException e) {
-          storeError(e.getMessage(), t);
+          storeError(t, e.getMessage());
           ret = TermFactory.createConstant(txt, TypeFactory.stringSort);
         }
         return confirmType(t, ret, expectedType);
@@ -91,13 +101,13 @@ class TermTyper {
         return makeCalculationSymbol(t, name, expectedType);
       case Identifier(Token t, String name):
         return makeIdentifier(t, name, expectedType, typeShouldBeDerivable);
-      case Meta(Token t, String name, ImmutableList<ParserTerm> args):
+      case Meta(Token t, String name, FixedList<ParserTerm> args):
         return makeMeta(t, name, args, expectedType, typeShouldBeDerivable);
       case Lambda(Token t, String varname, Type type, ParserTerm arg):
         return makeAbstraction(t, varname, type, arg, expectedType, typeShouldBeDerivable);
-      case Tup(Token t, ImmutableList<ParserTerm> args):
+      case Tup(Token t, FixedList<ParserTerm> args):
         return makeTuple(t, args, expectedType, typeShouldBeDerivable);
-      case Application(Token t, ParserTerm head, ImmutableList<ParserTerm> args):
+      case Application(Token t, ParserTerm head, FixedList<ParserTerm> args):
         return makeApplication(t, head, args, expectedType, typeShouldBeDerivable);
       case PErr(ParserTerm t):
         return makeTerm(t, expectedType, typeShouldBeDerivable);
@@ -114,8 +124,8 @@ class TermTyper {
     if (term.isValue()) kind = "value ";
     else if (term.isConstant()) kind = "function symbol ";
     else if (term.isVariable()) kind = "variable ";
-    storeError("Expected term of type " + expected.toString() + ", but got " + kind +
-      term.toString() + " which has type " + term.queryType().toString() + ".", token);
+    storeError(token, "Expected term of type ", expected, ", but got " + kind,
+      term, " which has type ", term.queryType(), ".");
     return TermFactory.createConstant(term.toString(), expected);
   }
 
@@ -162,10 +172,10 @@ class TermTyper {
     }
     // special case: what if someone gives [-] and intends it to be binary?
     if (expected != null && name.equals(CoraParser.MINUS) && expected.queryArity() == 2) {
-      storeError("Use of unary calculation symbol [-] with binary type: while a - b is allowed " +
-        "to occur in terms, this is considered syntactic sugar for a + (-b); it cannot be done " +
-        "in a partially applied way.  If you want to use binary subtraction, please encode it " +
-        "using a helper function symbol.", token);
+      storeError(token, "Use of unary calculation symbol [-] with binary type: while a - b is " +
+        "allowed to occur in terms, this is considered syntactic sugar for a + (-b); it cannot " +
+        "be done in a partially applied way.  If you want to use binary subtraction, please " +
+        "encode it using a helper function symbol.");
       return TermFactory.createConstant("-", expected);
     }
     return confirmType(token, ret, expected);
@@ -182,15 +192,15 @@ class TermTyper {
     Variable x = _symbols.lookupVariable(name);
     if (x != null) return confirmType(token, x, expected);
     if (_symbols.lookupMetaVariable(name) != null) {
-      storeError("Symbol " + name + " was previously used (or declared) as a meta-variable with " +
-        "arity > 0; here it is used as a variable.", token);
+      storeError(token, "Symbol " + name + " was previously used (or declared) as a " +
+        "meta-variable with arity > 0; here it is used as a variable.");
       if (expected == null) expected = _symbols.lookupMetaVariable(name).queryType();
       return TermFactory.createVar(name, expected);
     }
     if (expected == null) {
       if (derivable) {
-        storeError("Undeclared symbol: " + name + ".  Type cannot easily be deduced from " +
-          "context.", token);
+        storeError(token, "Undeclared symbol: " + name + ".  Type cannot easily be deduced from " +
+          "context.");
       }
       return TermFactory.createVar(name);
     }
@@ -205,7 +215,7 @@ class TermTyper {
    * not derivable when it should be, or if the arity does not match previous usage of this
    * meta-variable.
    */
-  private Term makeMeta(Token token, String name, ImmutableList<ParserTerm> args, Type expected,
+  private Term makeMeta(Token token, String name, FixedList<ParserTerm> args, Type expected,
                         boolean typeShouldBeDerivable) {
     // no arguments are supplied -- it's actually a free variable
     if (args.size() == 0) return makeFreeVarTerm(token, name, expected, typeShouldBeDerivable);
@@ -216,18 +226,18 @@ class TermTyper {
 
     // eror option: we know it as something else
     if (_symbols.lookupFunctionSymbol(name) != null) {
-      storeError("Unexpected meta-application with meta-variable " + name + ", which was " +
-        "previously declared as a function symbol.", token);
+      storeError(token, "Unexpected meta-application with meta-variable " + name + ", which was " +
+        "previously declared as a function symbol.");
     }
     else if (_symbols.lookupVariable(name) != null) {
       String kind = "variable without meta-arguments";
       if (_symbols.lookupVariable(name).isBinderVariable()) kind = "binder variable";
-      storeError("Unexpected meta-application with meta-variable " + name + ", which was " +
-        "previously used (or declared) as a " + kind +".", token);
+      storeError(token, "Unexpected meta-application with meta-variable " + name + ", which was " +
+        "previously used (or declared) as a " + kind + ".");
     }
     // error option: we don't know what type it should be
     if (expected == null && typeShouldBeDerivable) {
-      storeError("Cannot derive output type of meta-variable " + name + " from context.", token);
+      storeError(token, "Cannot derive output type of meta-variable " + name + " from context.");
     }
 
     // option 2: we don't know it yet, so we get to declare it
@@ -253,26 +263,26 @@ class TermTyper {
     Variable ret = _symbols.lookupVariable(name);
     if (ret != null) {
       if (ret.isBinderVariable()) {
-        storeError("Binder variable " + name + " used as meta-variable.", token);
+        storeError(token, "Binder variable " + name + " used as meta-variable.");
       }
       if (expected == null || expected.equals(ret.queryType())) return ret;
-      storeError("Expected term of type " + expected.toString() + ", but got " + name +
-        ", which was previously used as a variable of type " + ret.queryType() + ".", token);
+      storeError(token, "Expected term of type ", expected, ", but got " + name +
+        ", which was previously used as a variable of type ", ret.queryType(), ".");
       return TermFactory.createVar(name, expected);
     }
     boolean declare = expected != null;
     // we know it as a meta-variable, which means a higher type -- store a suitable error
     if (_symbols.lookupMetaVariable(name) != null) {
-      storeError("Meta-application for meta-variable " + name + " has no arguments, when it " +
-        "previously occurred (or was declared) with arity " +
-        _symbols.lookupMetaVariable(name).queryArity() + ".", token);
+      storeError(token, "Meta-application for meta-variable " + name + " has no arguments, when " +
+        "it previously occurred (or was declared) with arity " +
+        _symbols.lookupMetaVariable(name).queryArity() + ".");
       if (expected == null) expected = _symbols.lookupMetaVariable(name).queryType();
       declare = false;
     }
     // we know it as a function symbol -- give a suitable error
     else if (_symbols.lookupFunctionSymbol(name) != null) {
-      storeError("Meta-application for meta-variable " + name + ", which was previously " +
-        "declared as a function symbol.", token);
+      storeError(token, "Meta-application for meta-variable " + name + ", which was previously " +
+        "declared as a function symbol.");
       if (expected == null) expected = _symbols.lookupFunctionSymbol(name).queryType();
       declare = false;
     }
@@ -284,8 +294,8 @@ class TermTyper {
     }
     // unfortunately, if we can't figure out the type, we just assign a default
     if (deriveType) {
-      storeError("Undeclared (meta-)variable: " + name + ".  Type cannot easily be deduced " +
-        "from context.", token);
+      storeError(token, "Undeclared (meta-)variable: " + name + ".  Type cannot easily be " +
+        "deduced from context.");
     }
     return TermFactory.createVar(name);
   }
@@ -293,7 +303,7 @@ class TermTyper {
   /**
    * This function handles a ParserTerm mvar[children], when mvar has already been declared.
    */
-  private Term makeKnownMetaTerm(Token token, MetaVariable mvar, ImmutableList<ParserTerm> children,
+  private Term makeKnownMetaTerm(Token token, MetaVariable mvar, FixedList<ParserTerm> children,
                                  Type expected) {
 
     ArrayList<Term> args = new ArrayList<Term>();
@@ -308,17 +318,16 @@ class TermTyper {
 
     // error case: the children size does not match the previous / declared occurrence
     else {
-      storeError("Meta-variable " + mvar.queryName() + " was previously used (or declared) " +
-        "with arity " + mvar.queryArity() + ", but is here used with " + children.size() +
-        " arguments.", token);
+      storeError(token, "Meta-variable " + mvar.queryName() + " was previously used (or " +
+        "declared) with arity " + mvar.queryArity() + ", but is here used with " +
+        children.size() + " arguments.");
       for (int i = 0; i < children.size(); i++) args.add(makeTerm(children.get(i), null, false));
     }
 
     // error case: the output type does not match the previous / declared occurrence
     if (expected != null && !expected.equals(mvar.queryOutputType())) {
-      storeError("Meta-variable " + mvar.queryName() + " has output type " +
-        mvar.queryOutputType().toString() + " while a term of type " + expected.toString() +
-        " was expected.", token);
+      storeError(token, "Meta-variable " + mvar.queryName() + " has output type ",
+        mvar.queryOutputType(), " while a term of type ", expected, " was expected.");
     }
 
     // in either error case, create a new meta-variable with the right input and output types
@@ -334,7 +343,7 @@ class TermTyper {
    * the epxected type; if not, then it is wrapped to ensure that the return value has the
    * expected type. (If expected == null, any type suffices.)
    */
-  private Term makeTuple(Token token, ImmutableList<ParserTerm> elems, Type expected,
+  private Term makeTuple(Token token, FixedList<ParserTerm> elems, Type expected,
                          boolean typeShouldBeDerivable) {
     // handle the correct case first
     if (elems.size() >= 2 && (expected == null ||
@@ -349,22 +358,22 @@ class TermTyper {
 
     // handle the error cases!
     if (elems.size() == 0) {
-      storeError("Illegal empty tuple: tuples should have at least length 2.", token);
+      storeError(token, "Illegal empty tuple: tuples should have at least length 2.");
       return TermFactory.createConstant("⦇⦈", expected == null ? TypeFactory.defaultSort : expected);
     }
     if (elems.size() == 1) {
-      storeError("Illegal singleton tuple: tuples should have at least length 2.", token);
+      storeError(token, "Illegal singleton tuple: tuples should have at least length 2.");
       return makeTerm(elems.get(0), expected, typeShouldBeDerivable);
     }
 
     // now we know expected != null, and there's a type problem
     if (!expected.isProductType()) {
-      storeError("Type error: expected a term of type " + expected.toString() + " but got a " +
-        "tuple, which necessarily has a product type.", token);
+      storeError(token, "Type error: expected a term of type ", expected, " but got a " +
+        "tuple, which necessarily has a product type.");
     }
     else {
-      storeError("Type error: expected a term of type " + expected.toString() + " but got a " +
-        "tuple of length " + elems.size() + ".", token);
+      storeError(token, "Type error: expected a term of type ", expected, " but got a " +
+        "tuple of length " + elems.size() + ".");
     }
 
     ArrayList<Term> parts = new ArrayList<Term>();
@@ -387,8 +396,8 @@ class TermTyper {
     // in the subterm)
     if (expected == null && vartype == null) {
       if (typeShouldBeDerivable) {
-        storeError("Cannot derive type of binder " + varname + " from context; it should be " +
-          "denoted directly in the abstraction.", token);
+        storeError(token, "Cannot derive type of binder " + varname + " from context; it should " +
+          "be denoted directly in the abstraction.");
       }
       Term subterm = makeTerm(arg, null, false);
       return TermFactory.createAbstraction(TermFactory.createBinder(varname,
@@ -397,8 +406,8 @@ class TermTyper {
 
     // special error case: we are not expecting an arrow type
     if (expected != null && !expected.isArrowType()) {
-      storeError("Type error: expected subterm of type " + expected.toString() + ", but got " +
-        "abstraction, which necessarily has an arrow type.", token);
+      storeError(token, "Type error: expected subterm of type ", expected, ", but got " +
+        "abstraction, which necessarily has an arrow type.");
       Term ret = makeAbstraction(token, varname, vartype, arg, null, false);
       Type helper = TypeFactory.createArrow(ret.queryType(), expected);
       FunctionSymbol wrapper = TermFactory.createConstant("abs", helper);
@@ -411,8 +420,8 @@ class TermTyper {
     // in all other cases, we either have the type of the binder, or can derive it
     if (vartype == null) vartype = einp;
     else if (expected != null && !vartype.equals(einp)) {
-      storeError("Type error: expected subterm of type " + expected.toString() +
-        ", but got abstraction with variable of type " + vartype.toString() + ".", token);
+      storeError(token, "Type error: expected subterm of type ", expected,
+        ", but got abstraction with variable of type ", vartype, ".");
       vartype = einp;
     }
 
@@ -420,12 +429,12 @@ class TermTyper {
     Variable tmp = _symbols.lookupVariable(varname);
     if (tmp != null) _symbols.removeVariable(varname);
     if (_symbols.lookupFunctionSymbol(varname) != null) {
-      storeError("Ambiguous binder: this name has already been declared as a function symbol.",
-        token);
+      storeError(token, "Ambiguous binder: this name has already been declared as a function " +
+        "symbol.");
     }
     else if (_symbols.lookupMetaVariable(varname) != null) {
-      storeError("Ambiguous binder: this name has already been declared as a meta-variable.",
-        token);
+      storeError(token, "Ambiguous binder: this name has already been declared as a " +
+        "meta-variable.");
     }
     Variable binder = TermFactory.createBinder(varname, vartype);
     _symbols.addVariable(binder);
@@ -444,7 +453,7 @@ class TermTyper {
    * it matches the expected type.  This checks a few special cases of theory terms, and otherwise
    * delegates the work to makeStandardApplication.
    */
-  private Term makeApplication(Token token, ParserTerm apphead, ImmutableList<ParserTerm> args,
+  private Term makeApplication(Token token, ParserTerm apphead, FixedList<ParserTerm> args,
                                Type expected, boolean typeShouldBeDerivable) {
     switch (apphead) {
       case CalcSymbol(Token t, String name):
@@ -478,7 +487,7 @@ class TermTyper {
    * it matches the expected type.  We require that the term at the head of an application can
    * always figure out its own type, so the expected type is only used for checking here.
    */
-  private Term makeStandardApplication(Token token, ParserTerm apphead, ImmutableList<ParserTerm>
+  private Term makeStandardApplication(Token token, ParserTerm apphead, FixedList<ParserTerm>
                                        args, Type expected, boolean typeShouldBeDerivable) {
     Term head = makeTerm(apphead, null, true);
     if (head.queryType().queryArity() >= args.size()) {
@@ -491,15 +500,15 @@ class TermTyper {
 
     // error handling: what if the type of head does not have the right arity?
     else {
-      storeError("Arity error: " + head.toString() + " has type " + head.queryType().toString() +
-        ", but " + args.size() + " arguments are given.", token);
+      storeError(token, "Arity error: ", head, " has type ", head.queryType(), ", but ",
+        args.size(), " arguments are given.");
       return makeFakeApplication(head.toString(), args,
         expected == null ? head.queryType().queryOutputType() : expected);
     }
 
     // remaining case: head had the right arity, but the resulting term did not have the right type
-    storeError("Type error: expected term of type " + expected.toString() + ", but got " +
-      head.toString() + " of type " + head.queryType() + ".", token);
+    storeError(token, "Type error: expected term of type ", expected, ", but got ", head,
+      " of type ", head.queryType(), ".");
     return TermFactory.createConstant(head.toString(), expected);
   }
 
@@ -507,7 +516,7 @@ class TermTyper {
    * Creates a fake term of the given output type, representing the head applied to the given
    * arguments.
    */
-  private Term makeFakeApplication(String head, ImmutableList<ParserTerm> args, Type exp) {
+  private Term makeFakeApplication(String head, FixedList<ParserTerm> args, Type exp) {
     // read arguments
     ArrayList<Term> parts = new ArrayList<Term>();
     for (int i = 0; i < args.size(); i++) parts.add(makeTerm(args.get(i), null, false));
@@ -527,7 +536,7 @@ class TermTyper {
    * and unary form, and sometimes even to construct an integer.
    * Here, args.size() 
    */
-  private Term makeMinusApplication(Token token, ImmutableList<ParserTerm> args, Type expected) {
+  private Term makeMinusApplication(Token token, FixedList<ParserTerm> args, Type expected) {
     if (args.size() == 0) return makeCalculationSymbol(token, CoraParser.MINUS, expected);
     ArrayList<Term> targs = new ArrayList<Term>();
     for (int i = 0; i < args.size(); i++) {
@@ -547,8 +556,8 @@ class TermTyper {
       else b = TheoryFactory.minusSymbol.apply(b);
       return confirmType(token, TermFactory.createApp(TheoryFactory.plusSymbol, a, b), expected);
     }
-    storeError("Arity error: [-] can be used either with 1 or 2 arguments, but here it occurs " +
-      "with " + args.size() + ".", token);
+    storeError(token, "Arity error: [-] can be used either with 1 or 2 arguments, but here it " +
+      "occurs with " + args.size() + ".");
     Type type = expected == null ? TypeFactory.intSort : expected;
     for (int i = targs.size()-1; i >= 0; i--) {
       type = TypeFactory.createArrow(targs.get(i).queryType(), type);
@@ -565,13 +574,13 @@ class TermTyper {
    * Note that this is only called if the type cannot be derived from the expected type.
    */
   private Term makeOverloadedApplication(Token token, String name,
-                                         ImmutableList<ParserTerm> args, Type expected) {
+                                         FixedList<ParserTerm> args, Type expected) {
     Term arg1, arg2;
 
     // error case: too many arguments are given
     if (args.size() > 2) {
-      storeError("Arity error: overloaded operator " + token.getText() + " can take 2 arguments, " +
-        "but " + args.size() + " are given!", token);
+      storeError(token, "Arity error: overloaded operator " + token.getText() +
+        " can take 2 arguments, but " + args.size() + " are given!");
       return makeFakeApplication("[" + token.getText() + "]", args,
         expected == null ? TypeFactory.boolSort : expected);
     }
@@ -597,8 +606,8 @@ class TermTyper {
     // error handling: give an appropriate error if the type could not be derived
     Term head;
     if (input.equals(TypeFactory.defaultSort)) {
-      storeError("Cannot deduce input type of overloaded operator.  Please indicate the type " +
-        "by subscripting (e.g., " + token.getText() + "_Int).", token);
+      storeError(token, "Cannot deduce input type of overloaded operator.  Please indicate the " +
+        "type by subscripting (e.g., " + token.getText() + "_Int).");
       input = TypeFactory.intSort;
       head = TermFactory.createConstant("[" + token.getText() + "]", expectedHeadType);
     }

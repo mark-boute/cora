@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -17,16 +17,17 @@ package charlie.terms;
 
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
-import com.google.common.collect.ImmutableList;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.TreeMap;
 import java.util.TreeSet;
-import charlie.exceptions.*;
+import charlie.util.FixedList;
+import charlie.util.NullStorageException;
 import charlie.util.Pair;
 import charlie.types.Type;
 import charlie.types.TypeFactory;
 import charlie.terms.position.*;
+import charlie.terms.replaceable.ReplaceableList;
 
 class MetaApplicationTest extends TermTestFoundation {
   @Test
@@ -58,13 +59,13 @@ class MetaApplicationTest extends TermTestFoundation {
     inputs.add(baseType("a"));
     MetaVariable z = TermFactory.createMetaVar("z", inputs, baseType("a"));
     Term s = constantTerm("s", baseType("a"));
-    assertThrows(ArityException.class, () -> TermFactory.createMeta(z, s, s));
+    assertThrows(TypingException.class, () -> TermFactory.createMeta(z, s, s));
     ArrayList<Term> args = new ArrayList<Term>();
     args.add(constantTerm("a", baseType("a")));
     args.add(constantTerm("a", baseType("a")));
     args.add(constantTerm("a", baseType("a")));
     args.add(constantTerm("a", baseType("a")));
-    assertThrows(ArityException.class, () -> TermFactory.createMeta(z, args));
+    assertThrows(TypingException.class, () -> TermFactory.createMeta(z, args));
   }
 
   @Test
@@ -95,7 +96,7 @@ class MetaApplicationTest extends TermTestFoundation {
   }
 
   private Term makeMeta(String name, Term arg, Type output) {
-    ImmutableList<Type> inputs = ImmutableList.<Type>builder().add(arg.queryType()).build();
+    FixedList<Type> inputs = FixedList.of(arg.queryType());
     MetaVariable z = new HigherMetaVar(name, inputs, output);
     return TermFactory.createMeta(z, arg);
   }
@@ -292,10 +293,10 @@ class MetaApplicationTest extends TermTestFoundation {
     Term term = createTestTerm();
     List<Pair<Term,Position>> lst = term.querySubterms();
     assertTrue(lst.size() == 4);
-    assertTrue(lst.get(0).snd().toString().equals("!1.1.ε"));
-    assertTrue(lst.get(1).snd().toString().equals("!1.ε"));
+    assertTrue(lst.get(0).snd().toString().equals("!1.1"));
+    assertTrue(lst.get(1).snd().toString().equals("!1"));
     assertTrue(lst.get(2).fst() == term.queryMetaArgument(2));
-    assertTrue(lst.get(2).snd().toString().equals("!2.ε"));
+    assertTrue(lst.get(2).snd().toString().equals("!2"));
     assertTrue(lst.get(3).fst() == term);
     assertTrue(lst.get(3).snd().toString().equals("ε"));
     assertTrue(term.hasSubterm(lst.get(0).fst()));
@@ -306,11 +307,11 @@ class MetaApplicationTest extends TermTestFoundation {
     Term term = createTestTerm().apply(constantTerm("a", baseType("a")));
     List<Pair<Term,Position>> lst = term.querySubterms();
     assertTrue(lst.size() == 5);
-    assertTrue(lst.get(0).snd().toString().equals("!1.1.ε"));
-    assertTrue(lst.get(1).snd().toString().equals("!1.ε"));
+    assertTrue(lst.get(0).snd().toString().equals("!1.1"));
+    assertTrue(lst.get(1).snd().toString().equals("!1"));
     assertTrue(lst.get(2).fst() == term.queryMetaArgument(2));
-    assertTrue(lst.get(2).snd().toString().equals("!2.ε"));
-    assertTrue(lst.get(3).snd().toString().equals("1.ε"));
+    assertTrue(lst.get(2).snd().toString().equals("!2"));
+    assertTrue(lst.get(3).snd().toString().equals("1"));
     assertTrue(lst.get(4).snd().toString().equals("ε"));
     assertTrue(term.hasSubterm(lst.get(3).fst()));
     assertTrue(term.hasSubterm(lst.get(4).fst()));
@@ -322,13 +323,13 @@ class MetaApplicationTest extends TermTestFoundation {
     Term term = createTestTerm().apply(constantTerm("a", baseType("a")));
     List<Position> lst = term.queryPositions(true);
     assertTrue(lst.size() == 7);
-    assertTrue(lst.get(0).toString().equals("!1.1.ε"));   // x
-    assertTrue(lst.get(1).toString().equals("!1.☆1"));    // g
-    assertTrue(lst.get(2).toString().equals("!1.ε"));     // g(x)
-    assertTrue(lst.get(3).toString().equals("!2.ε"));     // c
-    assertTrue(lst.get(4).toString().equals("1.ε"));      // a
-    assertTrue(lst.get(5).toString().equals("☆1"));       // Z⟨g(x),c⟩
-    assertTrue(lst.get(6).toString().equals("ε"));        // Z⟨g(x),c⟩(a)
+    assertTrue(lst.get(0).toString().equals("!1.1"));   // x
+    assertTrue(lst.get(1).toString().equals("!1.☆1"));  // g
+    assertTrue(lst.get(2).toString().equals("!1"));     // g(x)
+    assertTrue(lst.get(3).toString().equals("!2"));     // c
+    assertTrue(lst.get(4).toString().equals("1"));      // a
+    assertTrue(lst.get(5).toString().equals("☆1"));     // Z⟨g(x),c⟩
+    assertTrue(lst.get(6).toString().equals("ε"));      // Z⟨g(x),c⟩(a)
   }
 
   @Test
@@ -353,18 +354,18 @@ class MetaApplicationTest extends TermTestFoundation {
   public void testSubtermBad() {
     Term term = createTestTerm();
     Position pos = new ArgumentPos(1, Position.empty);
-    assertThrows(IndexingException.class, () -> term.querySubterm(pos));
+    assertThrows(InvalidPositionException.class, () -> term.querySubterm(pos));
   }
 
   @Test
   public void testHeadSubtermBad() {
     Term term = createTestTerm();
     Position pos = new FinalPos(1);
-    assertThrows(IndexingException.class, () -> term.querySubterm(pos));
+    assertThrows(InvalidPositionException.class, () -> term.querySubterm(pos));
   }
 
   @Test
-  public void testSubtermReplacementGood() throws CustomParserException {
+  public void testSubtermReplacementGood() throws PositionFormatException {
     Term term = createTestTerm();
     Position pos = Position.parse("!1.1");
     Term replacement = constantTerm("42", baseType("b"));
@@ -388,27 +389,27 @@ class MetaApplicationTest extends TermTestFoundation {
   }
 
   @Test
-  public void testSubtermReplacementBadPositionKind() throws CustomParserException {
+  public void testSubtermReplacementBadPositionKind() throws PositionFormatException {
     Term term = createTestTerm();
-    Position pos = Position.parse("2.ε");
+    Position pos = Position.parse("2");
     Term replacement = constantTerm("uu", baseType("b"));
-    assertThrows(IndexingException.class, () -> term.replaceSubterm(pos, replacement));
+    assertThrows(InvalidPositionException.class, () -> term.replaceSubterm(pos, replacement));
   }
 
   @Test
-  public void testSubtermReplacementBadPositionRange() throws CustomParserException {
+  public void testSubtermReplacementBadPositionRange() throws PositionFormatException {
     Term term = createTestTerm();
-    Position pos = Position.parse("!3.ε");
+    Position pos = Position.parse("!3");
     Term replacement = constantTerm("uu", baseType("b"));
-    assertThrows(IndexingException.class, () -> term.replaceSubterm(pos, replacement));
+    assertThrows(InvalidPositionException.class, () -> term.replaceSubterm(pos, replacement));
   }
 
   @Test
-  public void testSubtermReplacementBadHeadPosition() throws CustomParserException {
+  public void testSubtermReplacementBadHeadPosition() throws PositionFormatException {
     Term term = createTestTerm();
     Position pos = Position.parse("☆1");
     Term replacement = constantTerm("uu", arrowType("a", "b"));
-    assertThrows(IndexingException.class, () -> term.replaceSubterm(pos, replacement));
+    assertThrows(InvalidPositionException.class, () -> term.replaceSubterm(pos, replacement));
   }
 
   @Test
@@ -422,8 +423,8 @@ class MetaApplicationTest extends TermTestFoundation {
   @Test
   public void testIllegalCalls() {
     Term t = makeSample();
-    assertThrows(IndexingException.class, () -> t.queryImmediateHeadSubterm(1));
-    assertThrows(IndexingException.class, () -> t.queryArgument(1));
+    assertThrows(IndexOutOfBoundsException.class, () -> t.queryImmediateHeadSubterm(1));
+    assertThrows(IndexOutOfBoundsException.class, () -> t.queryArgument(1));
     assertThrows(InappropriatePatternDataException.class, () -> t.queryRoot());
     assertThrows(InappropriatePatternDataException.class, () -> t.queryVariable());
   }
@@ -495,57 +496,6 @@ class MetaApplicationTest extends TermTestFoundation {
     Term term1 = TermFactory.createMeta(m, x1);
     Term term2 = TermFactory.createMeta(m, x2);
     assertFalse(term1.equals(term2));
-  }
-
-  @Test
-  public void testSubstituteCorrectly() {
-    // Z⟨g(x), c⟩ [x:=0, Z := λy,w.f(w, y)]
-    Type type = arrowType(baseType("a"), arrowType(baseType("b"), arrowType("a", "b")));
-    MetaVariable z = TermFactory.createMetaVar("Z", type, 2);
-    Variable x = new Var("x", baseType("b"));
-    Term arg1 = unaryTerm("g", baseType("a"), x);
-    Term arg2 = constantTerm("c", baseType("b"));
-    Term term = TermFactory.createMeta(z, arg1, arg2);
-
-    Substitution gamma = new Subst();
-    gamma.extend(x, constantTerm("0", baseType("b")));
-    Variable y = new Binder("y", baseType("a"));
-    Variable w = new Binder("w", baseType("b"));
-    Term f = constantTerm("f",
-      arrowType(baseType("b"), arrowType(baseType("a"), arrowType("a", "b"))));
-    gamma.extend(z, TermFactory.createAbstraction(y, TermFactory.createAbstraction(w,
-      TermFactory.createApp(f, w, y))));
-
-    Term result = term.substitute(gamma);
-    assertTrue(result.toString().equals("f(c, g(0))"));
-  }
-
-  @Test
-  public void testDifficultSubstitution() {
-    // Z⟨λx.a(x,y),F⟩
-    Variable x = new Binder("x", baseType("A"));
-    Variable y = new Binder("y", baseType("B"));
-    Term a = constantTerm("a", arrowType(baseType("A"), arrowType("B", "A")));
-    Term abs = new Abstraction(x, TermFactory.createApp(a, x, y));
-    Variable f = new Binder("F", arrowType("A", "A"));
-    MetaVariable z = TermFactory.createMetaVar("Z", arrowType(abs.queryType(),
-      arrowType(f.queryType(), baseType("A"))), 2);
-    Term term = TermFactory.createMeta(z, abs, f);
-    // [x:=0, y:=1, F:=λz.h(z, x), Z := λF, G.F(G(0))]
-    Substitution gamma = new Subst();
-    gamma.extend(x, constantTerm("0", baseType("A")));
-    gamma.extend(y, constantTerm("1", baseType("B")));
-    Variable z2 = new Binder("z", baseType("A"));
-    Term h = constantTerm("h", arrowType(baseType("A"), arrowType("A", "A")));
-    Term abs1 = new Abstraction(z2, TermFactory.createApp(h, z2, x));
-    gamma.extend(f, abs1);
-    Variable g = new Binder("G", arrowType("A", "A"));
-    Term zero = constantTerm("0", baseType("A"));
-    Term abs2 = new Abstraction(f, new Abstraction(g, f.apply(g.apply(zero))));
-    gamma.extend(z, abs2);
-    // result of substituting: [λF, G.F(G(0))]⟨λx.a(x,1), λz.h(z, x)⟩⟩ = (λx.a(x,1))(λz.h(z, x)(0))
-    // (note that it isn't normalised beyond that)
-    assertTrue(term.substitute(gamma).toString().equals("(λx1.a(x1, 1))((λz.h(z, x))(0))"));
   }
 
   @Test
@@ -672,18 +622,58 @@ class MetaApplicationTest extends TermTestFoundation {
 
   @Test
   public void testRefreshBinders() {
-    // Z⟨λx.x, λx.x⟩
+    // Z⟨λx.x, λx.x, y⟩
     Variable x = new Binder("x", baseType("o"));
+    Variable y = new Binder("y", baseType("b"));
+    Variable y2 = new Binder("y", baseType("b"));
     Term xx = new Abstraction(x, x);
     MetaVariable z = TermFactory.createMetaVar("Z", arrowType(arrowType("o", "o"),
-      arrowType(arrowType("o", "o"), baseType("a"))), 2);
-    Term term = TermFactory.createMeta(z, xx, xx);
-    Term t = term.refreshBinders();
-    assertTrue(t.equals(term));
+      arrowType(arrowType("o", "o"), arrowType("b", "a"))), 3);
+    Term term = TermFactory.createMeta(z, List.of(xx, xx, y));
+
+    // for now, the binders are the same
+    assertTrue(term.queryMetaArgument(1).queryVariable() ==
+               term.queryMetaArgument(2).queryVariable());
+
+    TreeMap<Variable,Variable> map = new TreeMap<Variable,Variable>();
+
+    map.put(y, y2);
+    Term t = term.renameAndRefreshBinders(map);
+    assertTrue(map.size() == 1);
+    assertTrue(map.get(y) == y2);
+    assertFalse(t.equals(term));
+    assertTrue(t.toString().equals(term.toString()));
     assertTrue(t.queryMetaVariable() == z);
+    assertTrue(t.queryMetaArgument(1).equals(term.queryMetaArgument(1)));
+    assertTrue(term.queryMetaArgument(2).equals(t.queryMetaArgument(1)));
+    assertTrue(t.queryMetaArgument(3) == y2);
     Variable x1 = t.queryMetaArgument(1).queryVariable();
     Variable x2 = t.queryMetaArgument(2).queryVariable();
     assertTrue(x1 != x2);
+    assertTrue(x1 != term.queryMetaArgument(1).queryVariable());
+    map.remove(y);
+
+    map.put(x, y2);
+    t = term.renameAndRefreshBinders(map);
+    assertTrue(map.size() == 1);
+    assertTrue(map.get(x) == y2);
+    assertTrue(t.equals(term));
+    assertTrue(t.queryMetaVariable() == z);
+    assertTrue(t.queryMetaArgument(1).equals(term.queryMetaArgument(1)));
+    assertTrue(term.queryMetaArgument(2).equals(t.queryMetaArgument(1)));
+    assertTrue(t.queryMetaArgument(3) == y);
+    x1 = t.queryMetaArgument(1).queryVariable();
+    x2 = t.queryMetaArgument(2).queryVariable();
+    assertTrue(x1 != term.queryMetaArgument(1).queryVariable());
+    assertTrue(x1 != t.queryMetaArgument(2).queryVariable());
+    assertTrue(x1 != y2);
+    map.remove(x);
+
+    map.put(x, y);
+    t = term.renameAndRefreshBinders(map);
+    assertTrue(map.size() == 1);
+    assertTrue(map.get(x) == y);
+    assertTrue(t.queryMetaArgument(1).queryVariable() != y);
   }
 
   @Test
@@ -697,269 +687,6 @@ class MetaApplicationTest extends TermTestFoundation {
     assertTrue(term.toString().equals("Z⟨λx1.x1, x⟩"));
     assertFalse(term.queryMetaArgument(1).queryVariable().equals(
                   term.queryMetaArgument(2).queryVariable()));
-  }
-
-  @Test
-  public void testNullMatch() {
-    Variable x = new Binder("x", baseType("o"));
-    Variable y = new Binder("y", baseType("o"));
-    MetaVariable z =
-      TermFactory.createMetaVar("Z", arrowType(baseType("o"), arrowType("o", "o")), 2);
-    Term t = TermFactory.createMeta(z, x, y);
-    Substitution subst = new Subst();
-    assertThrows(NullPointerException.class, () -> t.match(null, subst));
-  }
-
-  @Test
-  public void testNullSubst() {
-    Variable x = new Binder("x", baseType("o"));
-    Variable y = new Binder("y", baseType("o"));
-    MetaVariable z =
-      TermFactory.createMetaVar("Z", arrowType(baseType("o"), arrowType("o", "o")), 2);
-    Term t = TermFactory.createMeta(z, x, y);
-    Substitution subst = new Subst();
-    assertThrows(NullPointerException.class, () -> t.match(x, null));
-  }
-
-  private Term createTwoArgMeta(Term arg1, Term arg2) {
-    Type type = arrowType(arg1.queryType(), arrowType(arg2.queryType(), baseType("o")));
-    MetaVariable f = TermFactory.createMetaVar("F", type, 2);
-    return TermFactory.createMeta(f, arg1, arg2);
-  }
-
-  @Test
-  public void testNonPatternDueToNonVariableArg() {
-    // F⟨a⟩ matched against a
-    MetaVariable f = TermFactory.createMetaVar("F", arrowType("o", "o"), 1);
-    Term a = constantTerm("a", baseType("o"));
-    Term t = TermFactory.createMeta(f, a);
-    Substitution subst = new Subst();
-    assertThrows(PatternRequiredException.class, () -> t.match(a, subst));
-  }
-
-  @Test
-  public void testNonPatternDueToVarArg() {
-    // F⟨X⟩ matched against a
-    Variable x = new Var("X", baseType("o"));
-    MetaVariable f = TermFactory.createMetaVar("F", arrowType("o", "o"), 1);
-    Term t = TermFactory.createMeta(f, x);
-    Term a = constantTerm("a", baseType("o"));
-    assertThrows(PatternRequiredException.class, () -> t.match(a, new Subst()));
-  }
-
-  @Test
-  public void testNonPatternDueToSubstitutedVarArg() {
-    // F⟨X⟩ matched against a, with X:=y
-    Variable x = new Var("X", baseType("o"));
-    Variable y = new Binder("y", baseType("o"));
-    MetaVariable f = TermFactory.createMetaVar("F", arrowType("o", "o"), 1);
-    Term t = TermFactory.createMeta(f, x);
-    Term a = constantTerm("a", baseType("o"));
-    Substitution subst = new Subst();
-    subst.extend(x, y);
-    assertThrows(PatternRequiredException.class, () -> t.match(a, subst));
-  }
-
-  @Test
-  public void testNonPatternDueToBinderNotSubstituted() {
-    // F⟨x,y⟩ matched against a where x:=z, but y is not substituted
-    Variable x = new Binder("x", baseType("o"));
-    Variable y = new Binder("y", baseType("o"));
-    Variable z = new Binder("Z", baseType("o"));
-    Term t = createTwoArgMeta(x, y);
-    Substitution subst = new Subst();
-    subst.extend(x, z);
-    assertThrows(PatternRequiredException.class, () ->
-      t.match(constantTerm("a", baseType("o")), subst));
-  }
-
-  @Test
-  public void testNonPatternDueToBinderArgSubstitutedToVar() {
-    // F⟨x,y⟩ matched against a where x:=Z,y:=y
-    Variable x = new Binder("x", baseType("o"));
-    Variable y = new Binder("y", baseType("o"));
-    Variable z = new Var("Z", baseType("o"));
-    Term t = createTwoArgMeta(x, y);
-    Substitution subst = new Subst();
-    subst.extend(x, z);
-    subst.extend(y, z);
-    assertThrows(PatternRequiredException.class, () ->
-      t.match(constantTerm("a", baseType("o")), subst));
-  }
-
-  @Test
-  public void testNonPatternDueToDuplicateBinder() {
-    // F⟨x,x⟩ matched against x
-    Variable x = new Binder("x", baseType("o"));
-    Variable y = new Binder("y", baseType("o"));
-    Term t = createTwoArgMeta(x, x);
-    assertThrows(PatternRequiredException.class, () -> t.match(x, new Subst()));
-  }
-
-  @Test
-  public void testNonPatternDueToNonDistinctSubstitutedArgs() {
-    // F⟨x,y⟩ matched against a where x:=z and y:=z
-    Variable x = new Binder("x", baseType("o"));
-    Variable y = new Binder("y", baseType("o"));
-    Variable z = new Binder("z", baseType("o"));
-    Term t = createTwoArgMeta(x, y);
-    Substitution subst = new Subst();
-    subst.extend(x, z);
-    subst.extend(y, z);
-    assertThrows(PatternRequiredException.class, () ->
-      t.match(constantTerm("a", baseType("o")), subst));
-  }
-
-  @Test
-  public void testProperMatching() {
-    // F⟨x,y⟩ matched against h(y, x)
-    Variable x = new Binder("x", baseType("o"));
-    Variable y = new Binder("y", baseType("o"));
-    Variable z = new Binder("z", baseType("o"));
-    Term t = createTwoArgMeta(x, y);
-    Substitution subst = new Subst();
-    subst.extend(x, x);
-    subst.extend(y, y);
-    Term result =
-      TermFactory.createApp(constantTerm("h", arrowType(baseType("o"), arrowType("o", "o"))), y, x);
-    assertTrue(t.match(result, subst) == null);
-    assertTrue(subst.get(x) == x);
-    assertTrue(subst.get(y) == y);
-    assertTrue(subst.get(t.queryMetaVariable()).toString().equals("λx.λy.h(y, x)"));
-  }
-
-  @Test
-  public void testProperMatchingWithSwitchedVariables() {
-    // F⟨x,y⟩ matched against h(y, x) where x:=y and y:=x
-    Variable x = new Binder("x", baseType("o"));
-    Variable y = new Binder("y", baseType("o"));
-    Variable z = new Binder("z", baseType("o"));
-    Term t = createTwoArgMeta(x, y);
-    Substitution subst = new Subst();
-    subst.extend(x, y);
-    subst.extend(y, x);
-    Term result =
-      TermFactory.createApp(constantTerm("h", arrowType(baseType("o"), arrowType("o", "o"))), y, x);
-    assertTrue(t.match(result, subst) == null);
-    assertTrue(subst.get(t.queryMetaVariable()).toString().equals("λy.λx.h(y, x)"));
-  }
-
-  @Test
-  public void testLateAssignmentToArgument() {
-    // g(F⟨x⟩, x) against g(x, y)
-    Variable x = new Binder("x", baseType("o"));
-    Variable y = new Binder("x", baseType("o"));
-    MetaVariable f = TermFactory.createMetaVar("F", arrowType("o", "o"), 1);
-    Term g = constantTerm("g", arrowType(baseType("o"), arrowType("o", "o")));
-    Term term = new Application(g, TermFactory.createMeta(f, x), x);
-
-    Term m = new Application(g, x, y);
-    Substitution subst = new Subst();
-    assertTrue(term.match(m, subst) == null);
-    assertTrue(subst.get(x) == y);
-    assertTrue(subst.get(f).equals(new Abstraction(y, x)));
-  }
-
-  @Test
-  public void testTooLateAssignmentToArgument() {
-    // g(x, F⟨x⟩) against g(y, x)
-    Variable x = new Binder("x", baseType("o"));
-    Variable y = new Binder("x", baseType("o"));
-    MetaVariable f = TermFactory.createMetaVar("F", arrowType("o", "o"), 1);
-    Term g = constantTerm("g", arrowType(baseType("o"), arrowType("o", "o")));
-    Term term = new Application(g, x, TermFactory.createMeta(f, x));
-
-    Term m = new Application(g, y, x);
-    Substitution subst = new Subst();
-    assertThrows(PatternRequiredException.class, () -> term.match(m, subst));
-  }
-
-  @Test
-  public void testMatchingFailsExistingMapping() {
-    // F⟨x,y⟩ against g(x,y) where F is mapped to λxy.g(y,x)
-    Variable x = new Binder("x", baseType("o"));
-    Variable y = new Binder("y", baseType("o"));
-    MetaVariable f = TermFactory.createMetaVar("F", arrowType(baseType("o"),arrowType("o","o")), 2);
-    Term term = TermFactory.createMeta(f, x, y);
-    Term g = constantTerm("g", arrowType(baseType("o"), arrowType("o", "o")));
-    Term m = new Application(g, x, y);
-    Substitution subst = new Subst();
-    subst.extend(x, x);
-    subst.extend(y, y);
-    subst.extend(f, new Abstraction(x, new Abstraction(y, new Application(g, y, x))));
-    assertTrue(term.match(m, subst).equals(
-      "Meta-variable F is mapped to both λx.λy.g(y, x) and to λx.λy.g(x, y)."));
-  }
-
-  @Test
-  public void testMatchingCorrespondsExactlyToExistingMapping() {
-    // F⟨x,y⟩ against g(x,y) where F is mapped to λxy.g(x,y)
-    Variable x = new Binder("x", baseType("o"));
-    Variable y = new Binder("y", baseType("o"));
-    MetaVariable f = TermFactory.createMetaVar("F", arrowType(baseType("o"),arrowType("o","o")), 2);
-    Term term = TermFactory.createMeta(f, x, y);
-    Term g = constantTerm("g", arrowType(baseType("o"), arrowType("o", "o")));
-    Term m = new Application(g, x, y);
-    Substitution subst = new Subst();
-    subst.extend(x, x);
-    subst.extend(y, y);
-    subst.extend(f, new Abstraction(x, new Abstraction(y, new Application(g, x, y))));
-    assertTrue(term.match(m, subst) == null);
-  }
-
-  @Test
-  public void testMatchingAlphaCorrespondsToExistingMapping() {
-  // F⟨x,y⟩ against g(u,h(v)) where x:=v,y:=u,F:=λab.g(b,h(a))
-    Variable x = new Binder("x", baseType("o"));
-    Variable y = new Binder("y", baseType("o"));
-    Variable u = new Binder("u", baseType("o"));
-    Variable v = new Binder("v", baseType("o"));
-    Variable a = new Binder("a", baseType("o"));
-    Variable b = new Binder("b", baseType("o"));
-    MetaVariable f = TermFactory.createMetaVar("F", arrowType(baseType("o"),arrowType("o","o")), 2);
-    Term term = TermFactory.createMeta(f, x, y);
-    Term g = constantTerm("g", arrowType(baseType("o"), arrowType("o", "o")));
-    Term h = constantTerm("h", arrowType("o", "o"));
-    Term m = new Application(g, u, h.apply(v));
-    Substitution subst = new Subst();
-    subst.extend(x, v);
-    subst.extend(y, u);
-    subst.extend(f, new Abstraction(a, new Abstraction(b, new Application(g, b, h.apply(a)))));
-    assertTrue(term.match(m, subst) == null);
-  }
-
-  @Test
-  public void testNonLinearMetaOccurrence() {
-    // λx.λy.g(F⟨x⟩, F⟨y⟩) against λa.λb.g(h(z,a), h(z,b))
-    Variable x = new Binder("x", baseType("o"));
-    Variable y = new Binder("y", baseType("o"));
-    Variable z = new Binder("z", baseType("o"));
-    Variable a = new Binder("a", baseType("o"));
-    Variable b = new Binder("b", baseType("o"));
-    MetaVariable f = TermFactory.createMetaVar("F", arrowType("o", "o"), 1);
-    Term g = constantTerm("g", arrowType(baseType("o"), arrowType("o", "o")));
-    Term h = constantTerm("h", arrowType(baseType("o"), arrowType("o", "o")));
-    Term term = new Abstraction(x, new Abstraction(y, new Application(g, TermFactory.createMeta(f, x),
-      TermFactory.createMeta(f, y))));
-    Term m = new Abstraction(a, new Abstraction(b, new Application(g, new Application(h, z, a),
-      new Application(h, z, b))));
-    Substitution subst = term.match(m);
-    assertTrue(subst.get(f).equals(new Abstraction(x, new Application(h, z, x))));
-  }
-
-  @Test
-  public void testNonMatchDueToNonLinearity() {
-    // λx.g(F⟨x⟩, F⟨x⟩) against λy.g(h(z,y), h(y,z))
-    Variable x = new Binder("x", baseType("o"));
-    Variable y = new Binder("y", baseType("o"));
-    Variable z = new Binder("z", baseType("o"));
-    MetaVariable f = TermFactory.createMetaVar("F", arrowType("o", "o"), 1);
-    Term g = constantTerm("g", arrowType(baseType("o"), arrowType("o", "o")));
-    Term h = constantTerm("h", arrowType(baseType("o"), arrowType("o", "o")));
-    Term fx = TermFactory.createMeta(f, x);
-    Term term = new Abstraction(x, new Application(g, fx, fx));
-    Term m = new Abstraction(y, new Application(g, new Application(h,z,y), new Application(h,y,z)));
-    assertTrue(term.match(m, new Subst()) != null);
   }
 }
 

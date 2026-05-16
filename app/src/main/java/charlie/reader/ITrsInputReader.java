@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,7 +15,6 @@
 
 package charlie.reader;
 
-import com.google.common.collect.ImmutableList;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Map;
@@ -23,10 +22,12 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.Stack;
 
-import charlie.exceptions.*;
+import charlie.util.FixedList;
 import charlie.util.LookupMap;
 import charlie.types.*;
 import charlie.parser.lib.Token;
+import charlie.parser.lib.ParsingErrorMessage;
+import charlie.parser.lib.ParsingException;
 import charlie.parser.lib.ErrorCollector;
 import charlie.parser.Parser;
 import charlie.parser.Parser.*;
@@ -65,8 +66,12 @@ public class ITrsInputReader {
     _symbols = null;      // don't use before calling determineSymbolTypes
   }
 
-  private void storeError(String message, Token token) {
-    _errors.addError(token.getPosition() + ": " + message);
+  private void storeError(Token token, String message) {
+    _errors.addError(new ParsingErrorMessage(token, message));
+  }
+
+  private void storeError(Token token, IllegalRuleException e) {
+    _errors.addError(new ParsingErrorMessage(token, e));
   }
 
   // ====================================== CHECKING ARITIES ======================================
@@ -93,15 +98,15 @@ public class ITrsInputReader {
           case BoolVal(Token token, boolean istrue): continue;  // nothing to do
           case IntVal(Token token, int value): continue;        // nothing to do
           case Identifier(Token token, String name):
-            checkFunctionalArities(token, name, ImmutableList.of(), vars, ret);
+            checkFunctionalArities(token, name, FixedList.of(), vars, ret);
             continue;
           case Application(Token dummy, Identifier(Token token, String name),
-                           ImmutableList<ParserTerm> args):
+                           FixedList<ParserTerm> args):
             for (int j = args.size()-1; j >= 0; j--) terms.push(args.get(j));
             checkFunctionalArities(token, name, args, vars, ret);
             continue;
           case Application(Token dummy, CalcSymbol(Token token, String name),
-                           ImmutableList<ParserTerm> args):
+                           FixedList<ParserTerm> args):
             for (int j = args.size()-1; j >= 0; j--) terms.push(args.get(j));
             checkTheoryArities(token, name, args);
             continue;
@@ -115,13 +120,13 @@ public class ITrsInputReader {
   }
 
   /** Helper function for checkArities: checks a single term of the form f(s1,...,sn). */
-  private void checkFunctionalArities(Token token, String fname, ImmutableList<ParserTerm> args,
+  private void checkFunctionalArities(Token token, String fname, FixedList<ParserTerm> args,
                                       LookupMap<ParserDeclaration> vars,
                                       TreeMap<String,Integer> store) {
     // if it's a variable, it shouldn't be applied
     if (vars.containsKey(fname)) {
       if (args.size() != 0) {
-        storeError("Variable " + fname + " occurs with arguments like a function symbol.", token);
+        storeError(token, "Variable " + fname + " occurs with arguments like a function symbol.");
       }
     }
     // if we haven't seen it before, it's a function symbol, and we store its arity
@@ -130,8 +135,8 @@ public class ITrsInputReader {
     }
     // if we have seen it before, it had better occur with the expected number of arguments!
     else if (store.get(fname) != args.size()) {
-      storeError("Function symbol " + fname + " occurs with " + args.size() + " arguments, " +
-        "while it previously occurred with " + store.get(fname) + ".", token);
+      storeError(token, "Function symbol " + fname + " occurs with " + args.size() +
+        " arguments, while it previously occurred with " + store.get(fname) + ".");
     }
   }
 
@@ -139,22 +144,22 @@ public class ITrsInputReader {
    * Helper function for checkArities: checks a single term of the form f(s1,...,sn) where f is
    * a calculation symbol.
    */
-  private void checkTheoryArities(Token token, String fname, ImmutableList<ParserTerm> args) {
+  private void checkTheoryArities(Token token, String fname, FixedList<ParserTerm> args) {
     if (fname.equals(ITrsParser.NOT)) {
       if (args.size() != 1) {
-        storeError("Encountered negation with " + args.size() + " arguments (expected: 1).", token);
+        storeError(token, "Encountered negation with " + args.size() + " arguments (expected: 1).");
       }
     }
     else if (fname.equals(ITrsParser.MINUS)) {
       if (args.size() != 1 && args.size() != 2) {
-        storeError("Encountered minus with " + args.size() + " arguments (expected: 1 or 2).",
-          token);
+        storeError(token, "Encountered minus with " + args.size() +
+          " arguments (expected: 1 or 2).");
       }
     }
     else {
       if (args.size() != 2) {
-        storeError("Encountered " + fname + " with " + args.size() + " arguments (expected: 2).",
-          token);
+        storeError(token, "Encountered " + fname + " with " + args.size() +
+          " arguments (expected: 2).");
       }
     }
   }
@@ -208,9 +213,9 @@ public class ITrsInputReader {
       case Identifier(Token token, String name):
         if (vars.containsKey(name)) return varTypeNode(name, rule);
         else return funArgNode(name, 0);
-      case Application(Token t1, Identifier(Token t2, String name), ImmutableList<ParserTerm> a):
+      case Application(Token t1, Identifier(Token t2, String name), FixedList<ParserTerm> a):
         return funOutNode(name);
-      case Application(Token t1, CalcSymbol(Token t2, String name), ImmutableList<ParserTerm> a):
+      case Application(Token t1, CalcSymbol(Token t2, String name), FixedList<ParserTerm> a):
         if (name.equals(ITrsParser.PLUS) || name.equals(ITrsParser.MINUS) ||
             name.equals(ITrsParser.TIMES) || name.equals(ITrsParser.DIV) ||
             name.equals(ITrsParser.MOD)) return intNode();
@@ -243,7 +248,7 @@ public class ITrsInputReader {
       if (constr != null) todo.push(constr);
       while (!todo.isEmpty()) {
         ParserTerm t = todo.pop();
-        if (!(t instanceof Application(Token x, ParserTerm h, ImmutableList<ParserTerm> a))) continue;
+        if (!(t instanceof Application(Token x, ParserTerm h, FixedList<ParserTerm> a))) continue;
         for (ParserTerm u : a) todo.push(u);
         String base = null;
         if (h instanceof CalcSymbol(Token y, String name)) {
@@ -297,8 +302,8 @@ public class ITrsInputReader {
     TreeSet<String> intNodes = floodfill(intNode());
     TreeSet<String> boolNodes = floodfill(boolNode());
     if (intNodes.contains(boolNode())) {
-      _errors.addError("I could not derive a valid typing (Int and Bool positions are not " +
-        "consistentnly used).");
+      _errors.addError(new ParsingErrorMessage(null, "I could not derive a valid typing " +
+        "(Int and Bool positions are not consistentnly used)."));
       return;
     }
     _symbols = new SymbolData();
@@ -338,7 +343,7 @@ public class ITrsInputReader {
         x = TermFactory.createVar(name, expected);
         _symbols.addVariable(x);
         return x;
-      case Application(Token token, ParserTerm head, ImmutableList<ParserTerm> args):
+      case Application(Token token, ParserTerm head, FixedList<ParserTerm> args):
         f = readSymbol(head);
         ArrayList<Term> targs = new ArrayList<Term>();
         // a special case for minus, which can be used both in unary and binary notation in the
@@ -402,7 +407,7 @@ public class ITrsInputReader {
     _symbols.clearEnvironment();
     Term l = makeTerm(rule.left(), null);
     if (l.isVariable()) {
-      storeError("The left-hand side of a rule is not allowed to be a variable.", rule.token());
+      storeError(rule.token(), "The left-hand side of a rule is not allowed to be a variable.");
       makeTerm(rule.right(), null);    // for additional error messages
       return null;
     }   
@@ -415,7 +420,7 @@ public class ITrsInputReader {
       else return TrsFactory.createRule(l, r, TrsFactory.LCTRS);
     }
     catch (IllegalRuleException e) {
-      storeError(e.queryProblem(), rule.token());
+      storeError(rule.token(), e);
       return null;
     }
   }
@@ -430,17 +435,17 @@ public class ITrsInputReader {
     Alphabet alphabet = _symbols.queryCurrentAlphabet();
     try { return TrsFactory.createTrs(alphabet, rules, TrsFactory.LCTRS); }
     catch (IllegalRuleException e) {
-      _errors.addError(e.getMessage());
+      _errors.addError(new ParsingErrorMessage(null, e.getMessage()));
       return null;
     }
   }
 
   // ==================================== PUBLIC FUNCTIONALITY ====================================
 
-  /** Throws a ParseException if there are any errors stored in the given error collector */
+  /** Throws a ParsingException if there are any errors stored in the given error collector */
   private static void throwIfAnyErrors(ErrorCollector collector) {
     if (collector.queryErrorCount() > 0) {
-      throw new ParseException(collector.queryCollectedMessages());
+      throw collector.generateException();
     }
   }
 
@@ -461,7 +466,7 @@ public class ITrsInputReader {
   /**
    * Parses the given program, and returns the integer TRS that it defines.
    * If the string is not correctly formed, or the system cannot be unambiguously typed as an
-   * LCTRS, this may throw a ParseException.
+   * LCTRS, this may throw a ParsingException.
    */
   public static TRS readTrsFromString(String str) {
     ErrorCollector collector = new ErrorCollector();
@@ -471,7 +476,7 @@ public class ITrsInputReader {
 
   /**
    * Parses the given file, which should be a .itrs file, into an LCTRS.
-   * This may throw a ParseException, or an IOException if something goes wrong with the file
+   * This may throw a ParsingException, or an IOException if something goes wrong with the file
    * reading.
    */
   public static TRS readTrsFromFile(String filename) throws IOException {

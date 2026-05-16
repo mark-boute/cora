@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,7 +15,7 @@
 
 package charlie.terms.position;
 
-import charlie.exceptions.NullStorageException;
+import charlie.util.NullStorageException;
 
 public record MetaPos(int index, Position tail) implements Position {
   public MetaPos(int index, Position tail) {
@@ -29,15 +29,18 @@ public record MetaPos(int index, Position tail) implements Position {
     this.tail = tail;
   }
 
-  public String toString() {
-    return "!" + index + "." + tail.toString();
-  }
+  public String toString() { return toStringDefault(); }
 
   public boolean equals(Position other) {
     switch (other) {
       case MetaPos(int id, Position tl): return index == id && tail.equals(tl);
       default: return false;
     }
+  }
+
+  public boolean equals(Object other) {
+    if (other instanceof Position p) return equals(p);
+    return false;
   }
 
   public int hashCode() {
@@ -48,6 +51,17 @@ public record MetaPos(int index, Position tail) implements Position {
 
   public Position append(Position p) {
     return new MetaPos(this.index, this.tail.append(p));
+  }
+
+  public int queryChopCount() {
+    return tail.queryChopCount();
+  }
+
+  public int compareTo(Position pos) {
+    if (pos.isFinal()) return 1;
+    int c = this.queryHead() - pos.queryHead();
+    if (c != 0) return c;
+    return this.tail.compareTo(pos.queryTail());
   }
 
   public int queryHead() {

@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2019--2024 Cynthia Kop
+ Copyright 2019--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -21,11 +21,12 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.ArrayList;
 import java.util.Set;
 
-import charlie.exceptions.ParseException;
 import charlie.types.Type;
 import charlie.types.TypeFactory;
+import charlie.parser.lib.ParsingException;
 import charlie.parser.lib.ErrorCollector;
 import charlie.parser.CoraParser;
+import charlie.terms.replaceable.MutableRenaming;
 import charlie.terms.*;
 import charlie.trs.*;
 
@@ -74,7 +75,7 @@ public class CoraInputReaderTest {
     String str = "f :: a -> (b -> c)";
     CoraInputReader.readDeclarationForUnitTest(str, data, true, collector);
     assertTrue(data.lookupFunctionSymbol("f").queryType().toString().equals("a → Int"));
-    assertTrue(collector.queryCollectedMessages().equals(
+    assertTrue(collector.toString().equals(
       "1:1: Redeclaration of previously declared function symbol f.\n"));
   }
 
@@ -85,7 +86,7 @@ public class CoraInputReaderTest {
     String str = "f :: a -> (b -> c)";
     CoraInputReader.readDeclarationForUnitTest(str, data, true, collector);
     assertTrue(data.lookupFunctionSymbol("f").queryType().toString().equals("a → Int"));
-    assertTrue(collector.queryCollectedMessages().equals(
+    assertTrue(collector.toString().equals(
       "1:1: Redeclaration of previously declared function symbol f.\n"));
   }
 
@@ -113,7 +114,7 @@ public class CoraInputReaderTest {
   @Test
   public void testRuleWithIncorrecTypeInEnvironment() {
     try { CoraInputReader.readRule("{ F :: Int -> Int } f(F(x)) → y", generateTRS()); }
-    catch (ParseException e) {
+    catch (ParsingException e) {
       assertTrue(e.getMessage().equals(
         "1:23: Type error: expected term of type a, but got F(x) of type Int.\n"));
       return;
@@ -124,7 +125,7 @@ public class CoraInputReaderTest {
   @Test
   public void testAbuseVariableAsMetaVariable() {
     try { CoraInputReader.readRule("{ F :: a -> a } f(F[x]) → y", generateTRS()); }
-    catch (ParseException e) {
+    catch (ParsingException e) {
       assertTrue(e.getMessage().equals(
         "1:19: Unexpected meta-application with meta-variable F, which was previously used " +
           "(or declared) as a variable without meta-arguments.\n" +
@@ -137,7 +138,7 @@ public class CoraInputReaderTest {
   @Test
   public void testAbuseMetaVariableAsVariable() {
     try { CoraInputReader.readRule("{ F :: [a] -> a } f(F(x)) → y", generateTRS()); }
-    catch (ParseException e) {
+    catch (ParsingException e) {
       assertTrue(e.getMessage().equals(
         "1:21: Symbol F was previously used (or declared) as a meta-variable with arity > 0; " +
         "here it is used as a variable.\n"));
@@ -149,7 +150,7 @@ public class CoraInputReaderTest {
   @Test
   public void testEnvironmentWithVariableAlreadyDeclaredAsFunctionSymbol() {
     try { CoraInputReader.readRule("{ aa :: b } aa → aa", generateTRS()); }
-    catch (ParseException e) {
+    catch (ParsingException e) {
       assertTrue(e.getMessage().equals(
         "1:3: Name of variable aa already occurs as a function symbol.\n"));
       return;
@@ -160,7 +161,7 @@ public class CoraInputReaderTest {
   @Test
   public void testEnvironmentWithDuplicateVariableDeclaration() {
     try { CoraInputReader.readRule("{ x :: type, x :: type } aa → aa", generateTRS()); }
-    catch (ParseException e) {
+    catch (ParsingException e) {
       assertTrue(e.getMessage().equals(
         "1:14: Redeclaration of variable x in the same environment.\n"));
       return;
@@ -171,7 +172,7 @@ public class CoraInputReaderTest {
   @Test
   public void testEnvironmentWithDuplicateMetaVariableDeclaration() {
     try { CoraInputReader.readRule("{ x :: type, x :: [type] -> type } aa → aa", generateTRS()); }
-    catch (ParseException e) {
+    catch (ParsingException e) {
       assertTrue(e.getMessage().equals(
         "1:14: Redeclaration of meta-variable x in the same environment.\n"));
       return;
@@ -253,8 +254,9 @@ public class CoraInputReaderTest {
     Alphabet alphabet = data.queryCurrentAlphabet();
     TRS trs = createEmptyTRS(alphabet);
     try { CoraInputReader.readRule("filter(F,cons(H,T)) -> cons(H, filter(F, T)) | F(H)", trs); }
-    catch (ParseException e) {
-      assertTrue(e.getMessage().equals("1:1: constraint [F(H)] is not first-order.\n"));
+    catch (ParsingException e) {
+      assertTrue(e.getMessage().equals("1:1: Illegal rule [filter(F, cons(H, T)) -> " +
+        "cons(H, filter(F, T)) | F(H)]: the constraint is not first-order.\n"));
       return;
     }
     assertTrue(false);
@@ -263,7 +265,7 @@ public class CoraInputReaderTest {
   @Test
   public void testUnconstrainedRuleWithFreshVariableInRhs() {
     try { CoraInputReader.readRule(" i(x) -> y", generateTRS()); }
-    catch (ParseException e) {
+    catch (ParsingException e) {
       assertTrue(e.getMessage().equals("1:2: right-hand side of rule has a fresh variable y of " +
         "type a which does not occur on the left; only variables of theory sorts may occur " +
         "fresh (and that only in some kinds of TRSs).\n"));
@@ -291,7 +293,7 @@ public class CoraInputReaderTest {
   @Test
   public void testRuleTypeError() {
     try { CoraInputReader.readRule("aa ->bb", generateTRS()); }
-    catch (ParseException e) {
+    catch (ParsingException e) {
       assertTrue(e.getMessage().equals("1:6: Expected term of type a, " +
       "but got function symbol bb which has type Int.\n"));
       return;
@@ -352,7 +354,7 @@ public class CoraInputReaderTest {
         "3 :: Int 7 :: Int f :: Bool -> Int -> Bool\n" +
         "f(X(3,y,7), y) -> X(7,3,y)", TrsFactory.AMS);
     }
-    catch (ParseException e) {
+    catch (ParsingException e) {
       assertTrue(e.getMessage().equals(
         "2:3: Undeclared symbol: X.  Type cannot easily be deduced from context.\n" +
         "2:19: Undeclared symbol: X.  Type cannot easily be deduced from context.\n"));
@@ -366,7 +368,7 @@ public class CoraInputReaderTest {
     try {
       TRS trs = CoraInputReader.readTrsFromString("a :: type1 b :: type2 a -> b");
     }
-    catch (ParseException e) {
+    catch (ParsingException e) {
       assertTrue(e.getMessage().equals("1:28: Expected term of type type1, but got function " +
         "symbol b which has type type2.\n"));
       return;
@@ -385,14 +387,14 @@ public class CoraInputReaderTest {
         "g(a,y) -> a -> y\n" +
         "f(2) -> 3\n", TrsFactory.AMS);
     }
-    catch (ParseException e) {
+    catch (ParsingException e) {
       assertTrue(e.getMessage().equals(
-        "5:13: Expected term, started by an identifier, λ, string or (, but got ARROW (->).\n" +
+        "5:13: Expected term, started by an identifier, LAMBDA, string or (, but got ARROW (->).\n"+
         "3:9: Undeclared symbol: g.  Type cannot easily be deduced from context.\n" +
         "5:1: Undeclared symbol: g.  Type cannot easily be deduced from context.\n" +
         "5:11: Expected term of type o, but got function symbol a which has type 3.\n" +
-        "6:1: The rule f(2) → _3 is not allowed to occur in AMSs: right-hand side contains a " +
-          "variable that does not occur in the left-hand side.\n"));
+        "6:1: Illegal rule [f(2) -> _3]: this rule may not occur in AMSs because the right-hand " +
+          "side contains a variable that does not occur in the left-hand side.\n"));
       return;
     }
     assertTrue(false);
@@ -411,12 +413,13 @@ public class CoraInputReaderTest {
         "-(x, y) -> x + -1 * y\n",
         TrsFactory.LCSTRS);
     }
-    catch (ParseException e) {
+    catch (ParsingException e) {
       assertTrue(e.getMessage().equals(
         "2:17: Expected a comma or closing bracket ) but got MID (|).\n" +
-        "3:18: Expected term, started by an identifier, λ, string or (, but got " +
+        "3:18: Expected term, started by an identifier, LAMBDA, string or (, but got " +
           "BRACKETCLOSE ()).\n" +
-        "5:3: Expected term, started by an identifier, λ, string or (, but got DECLARE (::).\n" +
+        "5:3: Expected term, started by an identifier, LAMBDA, string or (, but got " +
+          "DECLARE (::).\n" +
         "7:4: Expected a closing bracket but got COMMA (,).\n"));
       return;
     }
@@ -429,9 +432,10 @@ public class CoraInputReaderTest {
       TRS trs = CoraInputReader.readTrsFromString(
         "f :: nat -> nat g :: (nat -> nat) -> nat f(x) → x", TrsFactory.MSTRS);
     }
-    catch (ParseException e) {
+    catch (ParsingException e) {
       assertTrue(e.getMessage().equals(
-        "Symbol g with a type (nat → nat) → nat cannot occur in a first-order TRS.\n"));
+        "Illegal occurrence of symbol g with type (nat → nat) → nat in MSTRS: higher-order " +
+          "symbols cannot occur in a first-order TRS.\n"));
       return;
     }
     assertTrue(false);
@@ -443,10 +447,10 @@ public class CoraInputReaderTest {
       TRS trs = CoraInputReader.readTrsFromString(
         "f :: nat -> nat { F :: nat -> nat } f(F(x)) → x", TrsFactory.MSTRS);
     }
-    catch (ParseException e) {
+    catch (ParsingException e) {
       assertTrue(e.getMessage().equals(
-        "1:17: The rule f(F(x)) → x is not allowed to occur in MSTRSs: rule level is " +
-        "limited to first-order terms, not applicative terms.\n"));
+        "1:17: Illegal rule [f(F(x)) -> x]: this rule may not occur in MSTRSs because the rule " +
+        "level is limited to first-order terms, not applicative terms.\n"));
       return;
     }
     assertTrue(false);
@@ -458,9 +462,10 @@ public class CoraInputReaderTest {
       TRS trs = CoraInputReader.readTrsFromString(
         "f :: (nat -> nat) -> nat f(F) → f(λx.F(x))", TrsFactory.STRS);
     }
-    catch (ParseException e) {
-      assertTrue(e.getMessage().equals("1:26: The rule f(F) → f(λx.F(x)) is not allowed to " +
-        "occur in STRSs: rule level is limited to applicative terms, not true terms.\n"));
+    catch (ParsingException e) {
+      assertTrue(e.getMessage().equals("1:26: Illegal rule [f(F) -> f(λx.F(x))]: this rule may " +
+        "not occur in STRSs because the rule level is limited to applicative terms, not true " +
+        "terms.\n"));
       return;
     }
     assertTrue(false);
@@ -473,9 +478,10 @@ public class CoraInputReaderTest {
         "map :: (nat -> nat) -> list -> list nil :: list map(λx.Z[x], nil) → nil",
         TrsFactory.CFS);
     }
-    catch (ParseException e) {
-      assertTrue(e.getMessage().equals("1:49: The rule map(λx.Z⟨x⟩, nil) → nil is not allowed " +
-        "to occur in CFSs: rule level is limited to true terms, not meta-terms.\n"));
+    catch (ParsingException e) {
+      assertTrue(e.getMessage().equals("1:49: Illegal rule [map(λx.Z⟨x⟩, nil) -> nil]: this " +
+        "rule may not occur in CFSs because the rule level is limited to true terms, not " +
+        "meta-terms.\n"));
       return;
     }
     assertTrue(false);
@@ -509,25 +515,23 @@ public class CoraInputReaderTest {
     Term t = CoraInputReader.readTerm("f(x, h(0, y))", trs);
     assertFalse(s.equals(t)); // different variables!
     TermPrinter printer = new TermPrinter(trs.queryFunctionSymbolNames());
-    Renaming renaming = printer.generateUniqueNaming(s);
-    assertTrue(CoraInputReader.readTerm("f(x, h(0, y))", renaming, false, trs).equals(s));
-    Variable x = renaming.getVariable("x");
-    Variable y = renaming.getVariable("y");
+    MutableRenaming renaming = printer.generateUniqueNaming(s);
+    assertTrue(CoraInputReader.readTerm("f(x, h(0, y))", renaming, trs).equals(s));
 
-    Renaming newnaming = new Renaming(trs.queryFunctionSymbolNames());
-    newnaming.setName(x, "aa");
-    newnaming.setName(y, "bb");
-    Term q = CoraInputReader.readTerm("f(aa, h(0, bb))", newnaming, false, trs);
+    MutableRenaming newnaming = new MutableRenaming(trs.queryFunctionSymbolNames());
+    newnaming.setName(renaming.getReplaceable("x"), "aa");
+    newnaming.setName(renaming.getReplaceable("y"), "bb");
+    Term q = CoraInputReader.readTerm("f(aa, h(0, bb))", newnaming, trs);
     assertTrue(s.equals(q));
   }
 
   @Test
   public void testUpdateRenaming() {
     TRS trs = CoraInputReader.readTrsFromString("f :: a -> a -> a");
-    Renaming renaming = new Renaming(Set.of());
+    MutableRenaming renaming = new MutableRenaming(Set.of());
     Variable x = TermFactory.createVar("x", type("a"));
     renaming.setName(x, "y");
-    Term s = CoraInputReader.readTerm("f(x, y)", renaming, true, trs);
+    Term s = CoraInputReader.readTermAndUpdateNaming("f(x, y)", renaming, trs);
     assertTrue(s.toString().equals("f(x__2, x__1)"));
     assertTrue(renaming.getName(x).equals("y"));
     assertTrue(renaming.getName(s.queryArgument(1).queryVariable()).equals("x"));
@@ -536,11 +540,13 @@ public class CoraInputReaderTest {
   @Test
   public void testUpdateRenamingIllegal() {
     TRS trs = CoraInputReader.readTrsFromString("f :: a -> a");
-    Renaming renaming = new Renaming(Set.of("x"));
-    Term s = CoraInputReader.readTerm("f(x)", renaming, false, trs);
+    MutableRenaming renaming = new MutableRenaming(Set.of("x"));
+    // we can read x as a variable because it's only blocked in the renaming
+    Term s = CoraInputReader.readTerm("f(x)", renaming, trs);
     assertTrue(s.toString().equals("f(x)"));
-    assertThrows(ParseException.class, () ->
-      CoraInputReader.readTerm("f(x)", renaming, true, trs));
+    // now we can't read x as a variable, because we cannot update the renaming
+    assertThrows(ParsingException.class, () ->
+      CoraInputReader.readTermAndUpdateNaming("f(x)", renaming, trs));
   }
 }
 

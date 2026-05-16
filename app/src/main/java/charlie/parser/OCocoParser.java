@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,12 +15,14 @@
 
 package charlie.parser;
 
-import com.google.common.collect.ImmutableList;
 import java.io.IOException;
 import java.util.ArrayList;
 
+import charlie.util.FixedList;
 import charlie.util.LookupMap;
-import charlie.types.*;
+import charlie.types.Type;
+import charlie.types.Base;
+import charlie.types.TypeFactory;
 import charlie.parser.lib.ErrorCollector;
 import charlie.parser.lib.Token;
 import charlie.parser.lib.ParsingStatus;
@@ -104,15 +106,15 @@ public class OCocoParser extends FirstOrderParser implements Parser {
     try {
       int k = Integer.parseInt(text);
       if (k < 0) {
-        _status.storeError("Cannot set arity below 0.", token);
+        _status.storeError(token, "Cannot set arity below 0.");
         k = 0;
       }
       return TypeFactory.createDefaultArrow(k);
     }
     catch (NumberFormatException e) {
-      _status.storeError("Unexpected identifier: " + text + ".  Expected an integer " +
+      _status.storeError(token, "Unexpected identifier: " + text + ".  Expected an integer " +
         "(for the extended TRS format) or a sort declaration (for the MSTRS format).  Did you " +
-        "forget ->?", token);
+        "forget ->?");
       return TypeFactory.createSort(text);
     }
   }
@@ -122,7 +124,7 @@ public class OCocoParser extends FirstOrderParser implements Parser {
    *          | BRACKETOPEN IDENTIFIER type BRACKETCLOSE
    *
    * If the given text is not a function declaration, then an attempt at error recovery is done,
-   * and if this fails, a ParseException thrown.  If no error is thrown, then this function returns
+   * and if this fails, a ParsingException thrown.  If no error is thrown, then this function returns
    * a ParserDeclaration, not null.  It is guaranteed that calling this advances the parsing status
    * (or causes an error to be thrown).
    */
@@ -136,8 +138,8 @@ public class OCocoParser extends FirstOrderParser implements Parser {
     // make sure that we have the right kind of input to continue
     if (!_status.nextTokenIs(OCocoTokenData.IDENTIFIER) &&
         !_status.nextTokenIs(OCocoTokenData.ARROW)) {
-      _status.abort("Unexpected token: expected either an integer (for the extended TRS " +
-        "format), or a sort declaration (for the MSTRS format)", _status.peekNext());
+      _status.abort(_status.peekNext(), "Unexpected token: expected either an integer (for the " +
+        "extended TRS format), or a sort declaration (for the MSTRS format)");
     }
 
     Token next = _status.peekNext();
@@ -177,17 +179,17 @@ public class OCocoParser extends FirstOrderParser implements Parser {
     while (true) {
       if (_status.readNextIf(OCocoTokenData.BRACKETCLOSE) != null) return map.build();
       if (_status.peekNext().isEof()) {
-        _status.storeError("Unexpected end of input while reading (SIG.", _status.peekNext());
+        _status.storeError(_status.peekNext(), "Unexpected end of input while reading (SIG.");
         return map.build();
       }
       if (isSectionStart(_status.peekNext())) {
-        _status.storeError("Unexpected " + _status.peekNext().getText() + "; did you forget ) " +
-          "to close (SIG?", _status.peekNext());
+        _status.storeError(_status.peekNext(), "Unexpected " + _status.peekNext().getText() +
+          "; did you forget ) to close (SIG?");
         return map.build();
       }
       ParserDeclaration decl = readFunctionDeclaration();
       if (map.containsKey(decl.name())) {
-        _status.storeError("Redeclaration of function symbol " + decl.name() + ".", decl.token());
+        _status.storeError(decl.token(), "Redeclaration of function symbol " + decl.name() + ".");
       }
       else map.put(decl.name(), decl);
     }
@@ -201,7 +203,7 @@ public class OCocoParser extends FirstOrderParser implements Parser {
    * If this returns null, reading the rule failed, but at least one character (the arrow) has been
    * read, and error recovery may still be doable; with the right approach it might still be
    * possible to read the next rule.
-   * Otherwise, it will either throw a ParseException or return an actual rule.  (If a rule is
+   * Otherwise, it will either throw a ParsingException or return an actual rule.  (If a rule is
    * returned it is not guaranteed that parsing was entirely successful, however; it is possible
    * that some errors have been stored in the status.)
    */
@@ -222,7 +224,7 @@ public class OCocoParser extends FirstOrderParser implements Parser {
     if (vars == null) vars = LookupMap.<ParserDeclaration>empty();
     LookupMap<ParserDeclaration> funs = readSignature();
     if (funs == null) funs = LookupMap.<ParserDeclaration>empty();
-    ImmutableList<ParserRule> rules = readRules(vars);
+    FixedList<ParserRule> rules = readRules(vars);
     if (!readComment()) _status.expect(Token.EOF, "end of input");
     return new ParserProgram(funs, rules);
   }
@@ -241,7 +243,7 @@ public class OCocoParser extends FirstOrderParser implements Parser {
 
   /**
    * Reads a term from the given string.
-   * @throws charlie.exceptions.ParseException
+   * @throws ParsingException
    */
   public static ParserTerm readTerm(String str, ErrorCollector collector) {
     ParsingStatus status = makeStatus(str, collector);
@@ -255,7 +257,7 @@ public class OCocoParser extends FirstOrderParser implements Parser {
 
   /**
    * Reads a rule from the given string.
-   * @throws charlie.exceptions.ParseException
+   * @throws ParsingException
    */
   public static ParserRule readRule(String str, ErrorCollector collector) {
     ParsingStatus status = makeStatus(str, collector);
@@ -269,7 +271,7 @@ public class OCocoParser extends FirstOrderParser implements Parser {
 
   /**
    * Reads either the signature, or a set of variable declaration from the given string
-   * @throws charlie.exceptions.ParseException
+   * @throws ParsingException
    */
   public static LookupMap<ParserDeclaration> readDeclarations(String str, ErrorCollector collect) {
     ParsingStatus status = makeStatus(str, collect);
@@ -300,7 +302,7 @@ public class OCocoParser extends FirstOrderParser implements Parser {
 
   /**
    * Reads a full TRS, in the expected format for the current paser, from the given file.
-   * @throws charlie.exceptions.ParseException
+   * @throws ParsingException
    */
   public static ParserProgram readProgramFromFile(String filename,
                                                   ErrorCollector collector) throws IOException {

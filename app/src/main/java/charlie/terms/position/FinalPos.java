@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,8 +15,6 @@
 
 package charlie.terms.position;
 
-import charlie.exceptions.InappropriatePatternDataException;
-
 public record FinalPos(int chopcount) implements Position {
   public FinalPos(int chopcount) {
     if (chopcount < 0) {
@@ -25,16 +23,18 @@ public record FinalPos(int chopcount) implements Position {
     this.chopcount = chopcount;
   }
 
-  public String toString() {
-    if (chopcount == 0) return "ε";
-    else return "☆" + chopcount;
-  }
+  public String toString() { return toStringDefault(); }
 
   public boolean equals(Position other) {
     switch (other) {
       case FinalPos(int k): return chopcount == k;
       default: return false;
     }
+  }
+
+  public boolean equals(Object other) {
+    if (other instanceof Position p) return equals(p);
+    return false;
   }
 
   public int hashCode() {
@@ -57,11 +57,18 @@ public record FinalPos(int chopcount) implements Position {
     return chopcount;
   }
 
+  public int compareTo(Position other) {
+    return switch(other) {
+      case FinalPos(int c) -> this.chopcount - c;
+      default -> -1;
+    };
+  }
+
   public int queryHead() {
-    throw new InappropriatePatternDataException("FinalPos", "queryHead", "non-empty positions");
+    throw new IndexOutOfBoundsException("Calling queryHead() on FinalPos!");
   }
 
   public Position queryTail() {
-    throw new InappropriatePatternDataException("FinalPos", "queryTail", "non-empty positions");
+    throw new IndexOutOfBoundsException("Calling queryTail() on FinalPos!");
   }
 }

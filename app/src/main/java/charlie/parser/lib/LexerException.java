@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,16 +15,28 @@
 
 package charlie.parser.lib;
 
-/** A LexerException is an Exception that occurs while trying to tokenise a file or string. */
-public class LexerException extends Exception {
+import charlie.util.UserException;
+
+/**
+ * A LexerException is an Exception that occurs while trying to tokenise a file or string.
+ * Since this is information that will likely end up being shown to the user, we inherit
+ * UserException so that it may be caught and handled as such, even though we only work with
+ * strings (as lexer exceptions typically show only input that comes directly from the user).
+ */
+public class LexerException extends UserException {
   private Token _token;
 
   public LexerException(Token token, String message) {
-    super(token.getPosition() + ": " + message);
+    super(token.getPosition(), ": ", message);
+    _token = token;
   }
 
   public Token queryToken() {
     return _token;
+  }
+
+  public String queryMainMessage() {
+    return queryComponent(2).toString();
   }
 }
 

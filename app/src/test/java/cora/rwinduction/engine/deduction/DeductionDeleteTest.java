@@ -1,0 +1,161 @@
+/**************************************************************************************************
+ Copyright 2024-2025 Cynthia Kop
+
+ Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ in compliance with the License.
+ You may obtain a copy of the License at
+
+ http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software distributed under the
+ License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+ express or implied.
+ See the License for the specific language governing permissions and limitations under the License.
+ *************************************************************************************************/
+
+package cora.rwinduction.engine.deduction;
+
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+import java.util.List;
+import java.util.Set;
+import java.util.Optional;
+
+import charlie.util.FixedList;
+import charlie.terms.Term;
+import charlie.terms.TermPrinter;
+import charlie.trs.Rule;
+import charlie.trs.TRS;
+import charlie.reader.CoraInputReader;
+import charlie.smt.Valuation;
+import charlie.smt.SmtSolver.Answer;
+import charlie.smt.ProgrammableSmtSolver;
+import cora.config.Settings;
+import cora.io.OutputModule;
+import cora.rwinduction.parser.EquationParser;
+import cora.rwinduction.engine.*;
+
+class DeductionDeleteTest {
+  private TRS setupTRS() {
+    return CoraInputReader.readTrsFromString(
+      "sum1 :: Int -> Int\n" +
+      "sum1(x) -> 0 | x <= 0\n" +
+      "sum1(x) -> x + sum1(x-1) | x > 0\n" +
+      "sum2 :: Int -> Int\n" +
+      "sum2(x) -> iter(x, 0, 0)\n" +
+      "iter :: Int -> Int -> Int -> Int\n" +
+      "iter(x, i, z) -> z | i > x\n" +
+      "iter(x, i, z) -> iter(x, i+1, z+i) | i <= x\n");
+  }
+
+  public PartialProof setupProof(String eqdesc) {
+    TRS trs = setupTRS();
+    TermPrinter printer = new TermPrinter(Set.of());
+    return new PartialProof(trs,
+      EquationParser.parseEquationList("sum1(x) = sum2(x) | x ≥ 0 ; " + eqdesc, trs),
+      lst -> printer.generateUniqueNaming(lst));
+  }
+
+  private void testDeleteEquation(String eqdesc) {
+    PartialProof pp = setupProof(eqdesc);
+    OutputModule module = OutputModule.createUnitTestModule();
+    Optional<OutputModule> o = Optional.of(module);
+    DeductionDelete step = DeductionDelete.createStep(pp, o);
+    assertTrue(step.verifyAndExecute(pp, o));
+    assertTrue(pp.getProofState().getEquations().size() == 1);
+    assertTrue(pp.getProofState().getTopEquation().getIndex() == 1);
+    assertTrue(pp.getProofState().getHypotheses().size() == 0);
+    assertTrue(pp.getCommandHistory().size() == 1);
+    assertTrue(pp.getCommandHistory().get(0).equals("delete"));
+    assertTrue(module.toString().equals(""));
+  }
+
+  private String testFailToDeleteEquation(String eqdesc) {
+    PartialProof pp = setupProof(eqdesc);
+    OutputModule module = OutputModule.createUnitTestModule();
+    Optional<OutputModule> o = Optional.of(module);
+    DeductionDelete step = DeductionDelete.createStep(pp, o);
+    if (step == null) return module.toString();
+    assertFalse(step.verify(o));
+    // it also works without an output module!
+    o = Optional.empty();
+    step = DeductionDelete.createStep(pp, o);
+    assertFalse(step.verifyAndExecute(pp, o));
+    assertTrue(pp.getProofState().getEquations().size() == 2);
+    assertTrue(pp.getProofState().getTopEquation().getIndex() == 2);
+    assertTrue(pp.getCommandHistory().size() == 0);
+    // return the output created when we did use an output module
+    return module.toString();
+  }
+
+  @Test
+  public void testDeleteBecauseEqual() {
+    testDeleteEquation("sum1(x) -><- sum1(x) | x = 0");
+  }
+
+  @Test
+  public void testDeleteBecauseUnsatisfiable() {
+    Settings.smtSolver = new ProgrammableSmtSolver("(i1 >= 1) and (0 >= 1 + i1)", new Answer.NO());
+    testDeleteEquation("sum1(x) -><- sum2(x) | x > 0 ∧ x < 0");
+  }
+
+  @Test
+  public void testOmitOutputModule() {
+    Settings.smtSolver = new ProgrammableSmtSolver("i1 >= 1 + i1", new Answer.NO());
+    TRS trs = setupTRS();
+    TermPrinter printer = new TermPrinter(Set.of());
+    PartialProof pp = new PartialProof(trs,
+      EquationParser.parseEquationList("sum1(x) = sum2(x) | x ≥ 0 ; " +
+                                       "sum1(x) = sum1(x) | x > 0 ; " +
+                                       "sum1(x) = sum2(x) | x > x", trs),
+      lst -> printer.generateUniqueNaming(lst));
+    Optional<OutputModule> oo = Optional.empty();
+    DeductionDelete step = DeductionDelete.createStep(pp, oo);
+    assertTrue(step.verifyAndExecute(pp, oo));
+    step = DeductionDelete.createStep(pp, oo);
+    assertTrue(step.verifyAndExecute(pp, oo));
+    Settings.smtSolver = new ProgrammableSmtSolver("i1 >= 0", new Answer.MAYBE("something"));
+    step = DeductionDelete.createStep(pp, oo);
+    assertFalse(step.verify(oo));
+    assertTrue(step.execute(pp, oo));
+    assertTrue(pp.isFinal());
+  }
+
+  @Test
+  public void testNoDeleteBecauseMaybeSatisfiable() {
+    Settings.smtSolver = new ProgrammableSmtSolver("(i1 >= 1) and (0 >= 1 + i1)",
+                                                   new Answer.MAYBE("Solver doesn't know."));
+    String output = testFailToDeleteEquation("sum1(x) -><- sum2(x) | x > 0 ∧ x < 0");
+    assertTrue(output.equals("The DELETE rule is not obviously applicable: the left- and " +
+      "right-hand side are not the same, and checking satisfiability returns MAYBE (Solver " +
+      "doesn't know.)\n\n"));
+  }
+
+  @Test
+  public void testNoDeleteBecauseSatisfiable() {
+    Valuation val = new Valuation();
+    val.setInt(1, 4);
+    val.setInt(2, 3);
+    Settings.smtSolver = new ProgrammableSmtSolver("(i1 >= 1 + i2) and (1 + i2 >= i1)",
+                                                   new Answer.YES(val));
+    String output = testFailToDeleteEquation("sum1(x) -><- sum2(x) | x > y ∧ x ≤ y+1");
+    assertTrue(output.equals("The DELETE rule is not applicable: the left- and right-hand side " +
+      "are not the same, and the constraint is satisfiable using substitution [x := 4, y := 3]." +
+      "\n\n"));
+  }
+
+  @Test
+  public void testHistory() {
+    Settings.smtSolver = null;
+    PartialProof pp = setupProof("sum1(x) -><- sum2(x) | x > 0 ∧ x < 0");
+    OutputModule module = OutputModule.createUnitTestModule();
+    Optional<OutputModule> o = Optional.of(module);
+    DeductionDelete step = DeductionDelete.createStep(pp, o);
+    assertTrue(step.commandDescription().equals("delete"));
+    assertTrue(module.toString().equals(""));
+    step.explain(module);
+    assertTrue(module.toString().equals("We apply DELETION to E2 because the constraint is " +
+      "unsatisfiable.  Thus, we may remove this equation from the proof state.\n\n"));
+  }
+}
+

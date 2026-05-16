@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2019--2024 Cynthia Kop
+ Copyright 2019--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -16,9 +16,10 @@
 package charlie.terms;
 
 import java.util.Map;
-import charlie.exceptions.InappropriatePatternDataException;
-import charlie.exceptions.NullStorageException;
+import charlie.util.NullStorageException;
 import charlie.types.Type;
+import charlie.terms.replaceable.Replaceable;
+import charlie.terms.replaceable.ReplaceableList;
 
 /**
  * Binders are variables in Vbinder: variables that are only meant to be used as binders in an
@@ -30,7 +31,7 @@ import charlie.types.Type;
  * kept index.  By construction, no binder variables with an index greater than COUNTER can exist
  * in the program.
  */
-class Binder extends LeafTermInherit implements Variable {
+final class Binder extends LeafTermInherit implements Variable {
   private static int COUNTER = 0;
   private final String _name;
   private final int _index;
@@ -51,6 +52,7 @@ class Binder extends LeafTermInherit implements Variable {
     _name = "x{" + COUNTER + "}";
     _index = COUNTER;
     COUNTER++;
+    setVariables(new ReplaceableList(this));
   }
 
   /** @return true */
@@ -79,9 +81,9 @@ class Binder extends LeafTermInherit implements Variable {
     return _name;
   }
 
-  /** @return KIND_BINDER */
-  public int queryReplaceableKind() {
-    return Replaceable.KIND_BINDER;
+  /** @return Kind.BINDER */
+  public Kind queryReplaceableKind() {
+    return Replaceable.Kind.BINDER;
   }
 
   /** @return an integer uniquely identifying this binder variable */
@@ -99,42 +101,29 @@ class Binder extends LeafTermInherit implements Variable {
     return this;
   }
 
+  /** @return this */
+  public Term makeTerm() {
+    return this;
+  }
+
   /** @throws InappropriatePatternDataException, as a binder variable cannot be a meta-variable */
   public MetaVariable queryMetaVariable() {
     throw new InappropriatePatternDataException("Binder", "queryMetaVariable",
       "meta-variable applications");
   }
 
-  /** @return gamma(x) if the current variable is x and x in dom(gamma), otherwise just x */
-  public Term substitute(Substitution gamma) {
-    if (gamma == null) throw new NullPointerException("Substitution in Binder::substitute");
-    return gamma.getReplacement(this);
-  }
-
-  /** 
-   * This method updates gamma by adding the extension from x to the given other term, if x is not
-   * yet mapped to anything.
-   * If this works, then null is returned.
-   * If x is already mapped to the given other term, then nothing is done but null is returned.
-   * If x is mapped to a different term, then an explanation of the match failure is returned.
-   * If other or gamma is null, then a NullPointerException is thrown instead.
+  /**
+   * Returns renaming[this], or returns an error if that's not a variable of the same type.
+   * (If renaming is not set for this binder, then the binder is returned unmodified.)
    */
-  public String match(Term other, Substitution gamma) {
-    if (other == null) throw new NullPointerException("Other term in Binder::match");
-    if (gamma == null) throw new NullPointerException("Substitution in Binder::match");
-
-    Term previous = gamma.get(this);
-    
-    if (previous == null) {
-      if (!other.queryType().equals(queryType())) {
-        return "Binder " + _name + " has a different type from " + other.toString() + ".";
-      }
-      gamma.extend(this, other);
-      return null;
-    }   
-    else if (previous.equals(other)) return null;
-    else return "Binder " + _name + " mapped both to " + previous.toString() + " and to " +
-      other.toString() + ".";
+  public Variable renameAndRefreshBinders(Map<Variable,Variable> renaming) {
+    Variable ret = renaming.get(this);
+    if (ret == null) return this;
+    if (!ret.queryType().equals(queryType())) {
+      throw new TypingException("Called renameAndRefreshBinders mapping variable ", this,
+        " of type ", queryType(), " to ", ret, " of type ", ret.queryType(), ".");
+    }
+    return ret;
   }
 
   /**
@@ -151,7 +140,7 @@ class Binder extends LeafTermInherit implements Variable {
   /** Implements a total ordering on replaceables using the kind, index and type. */
   public int compareTo(Replaceable other) {
     if (other == this) return 0;  // shortcut
-    int d = other.queryReplaceableKind() - queryReplaceableKind();
+    int d = other.queryReplaceableKind().compareTo(queryReplaceableKind());
     if (d != 0) return d;
     if (_index < other.queryIndex()) return -1;
     if (_index > other.queryIndex()) return 1;

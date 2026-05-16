@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2019--2024 Cynthia Kop
+ Copyright 2019--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,7 +15,7 @@
 
 package charlie.terms;
 
-import com.google.common.collect.ImmutableList;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -24,6 +24,8 @@ import java.util.function.BiFunction;
 import charlie.util.Pair;
 import charlie.types.Type;
 import charlie.terms.position.Position;
+import charlie.terms.replaceable.Replaceable;
+import charlie.terms.replaceable.ReplaceableList;
 
 /**
  * Terms are the main object to be rewritten, or used to construct rules.  There are various kinds
@@ -107,35 +109,42 @@ public interface Term {
   /**
    * Returns the list of arguments; that is, [s1,...,sn] for a term h(s1,...,sn) with h not an
    * application.  Note that this is the empty list for any term that is not an application.
+   * Note also that this creates a copy of the actual arguments, so it costs more memory to
+   * iterate over the arguments in this way than using numberArguments() and queryArgument(int i).
    */
-  ImmutableList<Term> queryArguments();
+  ArrayList<Term> queryArguments();
 
   /**
    * Returns the list of components in a tuple term.
    * Notice that tuple terms that are valid have at least two components.
    * If the current term is not a tuple, the list returned is empty.
+   * Note also that this creates a copy of the actual tuple arguments, so it costs more memory to
+   * iterate over the arguments in this way than using numberTupleArguments and queryTupleArgument.
    */
-  ImmutableList<Term> queryTupleArguments();
+  ArrayList<Term> queryTupleArguments();
 
-  /** For a term of the form Z⟨t1,...,tk⟩(s1,...,sn), returns the list [t1,...,tk.] */
-  ImmutableList<Term> queryMetaArguments();
+  /**
+   * For a term of the form Z⟨t1,...,tk⟩(s1,...,sn), returns the list [t1,...,tk.]
+   * Warning: this creates a copy of the actual meta-arguments, so does cost some memory.
+   */
+  ArrayList<Term> queryMetaArguments();
 
   /**
    * If 1 <= i <= numberArguments, this returns the thus indexed argument.
-   * @throws charlie.exceptions.IndexingException if i is negative or > numberArguments.
+   * @throws java.lang.IndexOutOfBoundsException if i is negative or > numberArguments.
    */
   Term queryArgument(int i);
 
   /**
    * If the current term or its head is a meta-variable application, and its meta-variable has
    * arity k, and 1 ≤ i ≤ k, this returns the thus indexed argument to the meta-variable
-   * application.  Otherwise, this results in an IndexingException.
+   * application.  Otherwise, this results in an IndexOutOfBoundsException.
    */
   Term queryMetaArgument(int i);
 
   /**
    * If the current term is a tuple of length k, and 1 ≤ i ≤ k, this returns the thus indexed tuple
-   * component.  Otherwise, this results in an IndexingException.
+   * component.  Otherwise, this results in an IndexOutOfBoundsException.
    */
   Term queryTupleArgument(int i);
 
@@ -149,7 +158,7 @@ public interface Term {
    * For an applicative term a(s1,...,sn) (where a itself is not an application), the immediate
    * subterms are s1,...,sn.  There are also n+1 head subterms: a, a(s1), a(s1,s2), ...,
    * a(s1,...,sn).  Here, queryImmediateHeadSubterm(i) returns a(s1,...,si) if 0 ≤ i ≤ n, and
-   * throws an IndexingException otherwise.
+   * throws an IndexOutOfBoundsException otherwise.
    * (Note that this should not be used in analysis of first-order term rewriting, since all
    * non-trivial head subterms have a higher type).
    */
@@ -271,11 +280,14 @@ public interface Term {
   /**
    * Returns the subterm at the given position, assuming that this is indeed a position of the
    * current term.
-   * If not, an IndexingException is thrown.
+   * If not, an InvalidPositionException is thrown.
    */
   Term querySubterm(Position pos);
 
-  /** Returns the term obtained by replacing the subterm at the given position by replacement. */
+  /**
+   * Returns the term obtained by replacing the subterm at the given position by replacement.
+   * If the subterm doesn't exist, an InvalidPositionException is thrown.
+   */
   Term replaceSubterm(Position pos, Term replacement);
 
   /**
@@ -292,7 +304,7 @@ public interface Term {
    *
    * @param args a possibly empty list of terms, if <code>args</code> is an empty list then this
    *             method returns the calling object back
-   * @throws charlie.exceptions.TypingException if the term cannot be constructed for typing reasons.
+   * @throws TypingException if the term cannot be constructed for typing reasons.
    *
    */
   Term apply(List<Term> args);
@@ -301,33 +313,11 @@ public interface Term {
   Term apply(Term other);
 
   /**
-   * This method replaces each variable x in the term by gamma(x) (or leaves x alone if x is not
-   * in the domain of gamma), and similarly replaces Z⟨s1,...,sk⟩ with gamma(Z) = λx1...xk.t by
-   * t[x1:=s1 gamma,...,xk:=sk gamma]; the result is returned.
-   * The original term remains unaltered.  Gamma may be *temporarily* altered to apply the
-   * substitution, but is the same at the end of the function as at the start.
-   * Note that the result of substituting is a term where all binders in lambdas are freshly
-   * generated.
-   */
-  Term substitute(Substitution gamma);
-
-  /**
-   * This method either extends gamma so that <this term> gamma = other and returns null, or
-   * returns a string describing why other is not an instance of gamma.
-   * Whether or not null is returned, gamma is likely to be extended (although without overriding)
-   * by this function.
-   */
-  String match(Term other, Substitution gamma);
-
-  /**
-   * This method returns the substitution gamma such that <this term> gamma = other, if such a
-   * substitution exists; if it does not, then null is returned instead.
-   */
-  Substitution match(Term other);
-
-  /**
    * Provides a string representation of the current term.  Here, variables and meta-variables are
    * renamed as needed to avoid distinct (meta-)variables having the same name.
+   *
+   * NOTE: this is only meant as a default, for unit testing and debugging.  For player-visible
+   * output, a suitable TermPrinter should be used.
    */
   String toString();
 
@@ -337,28 +327,20 @@ public interface Term {
    */
   boolean equals(Term term);
 
-  /**
-   * Returns whether this term and other are equal up to a renaming of the free variables.
-   *
-   * @param other term to check for equality up to renaming of free variables
-   * @return whether this term and other are equal up to a renaming of the free variables
-   * @throws NullPointerException if term is the null reference
-   */
-  boolean equalsModuloRenaming(Term other);
-
   /* ======== the following functions are intended for internal use in the terms package ======== */
 
   /**
-   * Replaces all the binders in lambdas by fresh variables.
+   * Replaces all the binders in lambdas by fresh variables.  Here, Map must be mutable.
    * (This method is mostly intended for internal use in the terms package, to guarantee that all
-   * terms are well-behaved.)
+   * terms are well-behaved.  If you want to rename variables in general, it is better to use a
+   * Substitution.)
    */
-  Term refreshBinders();
+  Term renameAndRefreshBinders(Map<Variable,Variable> renaming);
 
   /**
    * Returns the set of all variables that occur bound in the current term, cast as Replaceables.
    * This is efficient, as it returns a cached set.
-   * It is meant for package-intenral use only.  Use vars() or mvars() outside the package.
+   * It is meant for package-internal use only.  Use vars() or mvars() outside the package.
    */
   ReplaceableList boundVars();
 

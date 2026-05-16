@@ -45,8 +45,8 @@ public class TermTyperTest {
     Type exp = expected == null ? null : type(expected);
     if (data == null) data = generateSignature();
     Term ret = TermTyper.readTerm(txt, constrained, data, exp, collector);
-    if (!collector.queryCollectedMessages().equals(message)) {
-      System.out.println(collector.queryCollectedMessages());
+    if (!collector.toString().equals(message)) {
+      System.out.println(collector.toString());
       System.out.println("ret = " + ret);
       assertTrue(false);
     }   
@@ -63,7 +63,7 @@ public class TermTyperTest {
   @Test
   public void testStringWithIllegalEscapeInIt() {
     Term t = readTerm("\"a\\xb\"", null, true, null,
-      "1:1: Cannot parse string \"a\\xb\": stray escape character at position 3: " +
+      "1:1: Cannot parse string [\"a\\xb\"]: stray escape character at position 3: " +
       "\\x is not an escape sequence.\n");
     assertTrue(t.toString().equals("\"a\\xb\""));
   }
@@ -887,7 +887,7 @@ public class TermTyperTest {
   public void testDoublePlus() {
     SymbolData data = generateSignature();
     Term t = readTerm("1 ++2", null, true, data,
-      "1:4: Expected term, started by an identifier, λ, string or (, but got PLUS (+).\n");
+      "1:4: Expected term, started by an identifier, LAMBDA, string or (, but got PLUS (+).\n");
     assertTrue(t == null);
   }
 

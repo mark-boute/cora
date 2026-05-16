@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,18 +15,17 @@
 
 package charlie.reader;
 
-import com.google.common.collect.ImmutableList;
-
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
-import charlie.exceptions.*;
+import charlie.util.FixedList;
 import charlie.util.LookupMap;
 import charlie.types.*;
 import charlie.parser.lib.Token;
+import charlie.parser.lib.ParsingException;
 import charlie.parser.lib.ErrorCollector;
 import charlie.parser.Parser;
 import charlie.parser.Parser.*;
@@ -63,8 +62,8 @@ public class AriInputReader extends TermTyper {
     if (bound.contains(name)) return;
     if (arity.containsKey(name)) {
       if (arity.get(name) != 0) {
-        storeError("Inconsistent arity of variable " + name + ": occurs with no arguments " +
-          "here, while it previously occurred with " + arity.get(name) + ".", token);
+        storeError(token, "Inconsistent arity of variable " + name + ": occurs with no arguments " +
+          "here, while it previously occurred with " + arity.get(name) + ".");
         return;
       }
     }
@@ -90,14 +89,14 @@ public class AriInputReader extends TermTyper {
           bound.remove(varname);
         }
         break;
-      case Application(Token token, ParserTerm head, List<ParserTerm> args):
+      case Application(Token token, ParserTerm head, FixedList<ParserTerm> args):
         storeVariableArity(head, arity, bound, args.size());
         for (ParserTerm t : args) storeVariableArity(t, arity, bound, 0);
         break;
       case PErr e:
         break;
       default:
-        storeError("Unexpected term shape in ARI unconstrained higher-order format.", term.token());
+        storeError(term.token(), "Unexpected term shape in ARI unconstrained higher-order format.");
     }
   }
 
@@ -115,8 +114,8 @@ public class AriInputReader extends TermTyper {
           if (backup != null) arity.put(varname, backup);
           yield ret;
         }
-      case Application(Token token, ParserTerm head, List<ParserTerm> args) -> {
-          ImmutableList.Builder<ParserTerm> newargs = ImmutableList.<ParserTerm>builder();
+      case Application(Token token, ParserTerm head, FixedList<ParserTerm> args) -> {
+          FixedList.Builder<ParserTerm> newargs = new FixedList.Builder<ParserTerm>();
           for (ParserTerm arg : args) newargs.add(replaceMetaVariables(arg, arity));
           if (head instanceof Identifier(Token t, String name) &&
               arity.containsKey(name) && arity.get(name) > 0) {
@@ -126,7 +125,7 @@ public class AriInputReader extends TermTyper {
         }
       case PErr e -> term;
       default -> {
-          storeError("Unexpected term shape.", term.token());
+          storeError(term.token(), "Unexpected term shape.");
           yield new PErr(term);
         }
     };
@@ -149,7 +148,7 @@ public class AriInputReader extends TermTyper {
     if (l == null || r == null) return null;
     try { return TrsFactory.createRule(l, r, TrsFactory.AMS); }
     catch (IllegalRuleException e) {
-      if (a == b) _errors.addError(e.getMessage());
+      if (a == b) storeError(rule.token(), e.getMessage());
       return null;
     }
   }
@@ -161,7 +160,7 @@ public class AriInputReader extends TermTyper {
       String name = decl.name();
       Type type = decl.type();
       if (_symbols.lookupFunctionSymbol(name) != null) {
-        storeError("Duplicate function symbol: " + name, decl.token());
+        storeError(decl.token(), "Duplicate function symbol: " + name);
       }
       else _symbols.addFunctionSymbol(TermFactory.createConstant(name, type));
     }
@@ -178,18 +177,16 @@ public class AriInputReader extends TermTyper {
     Alphabet alphabet = _symbols.queryCurrentAlphabet();
     try { return TrsFactory.createTrs(alphabet, rules, TrsFactory.AMS); }
     catch (IllegalRuleException e) {
-      _errors.addError(e.getMessage());
+      storeError(null, e.getMessage());
       return null;
     }
   }
 
   // ==================================== PUBLIC FUNCTIONALITY ====================================
 
-  /** Throws a ParseException if there are any errors stored in the given error collector */
+  /** Throws a ParsingException if there are any errors stored in the given error collector */
   private static void throwIfAnyErrors(ErrorCollector collector) {
-    if (collector.queryErrorCount() > 0) {
-      throw new ParseException(collector.queryCollectedMessages());
-    }
+    if (collector.queryErrorCount() > 0) throw collector.generateException();
   }
 
   /** Helper function for readTrsFromString and readTrsFromFile */
@@ -204,7 +201,7 @@ public class AriInputReader extends TermTyper {
   /**
    * Parses the given program, and returns the integer TRS that it defines.
    * If the string is not correctly formed, or the system cannot be unambiguously typed as an
-   * LCTRS, this may throw a ParseException.
+   * LCTRS, this may throw a ParsingException.
    */
   public static TRS readTrsFromString(String str) {
     ErrorCollector collector = new ErrorCollector();
@@ -214,7 +211,7 @@ public class AriInputReader extends TermTyper {
 
   /**
    * Parses the given file, which should be a .itrs file, into an LCTRS.
-   * This may throw a ParseException, or an IOException if something goes wrong with the file
+   * This may throw a ParsingException, or an IOException if something goes wrong with the file
    * reading.
    */
   public static TRS readTrsFromFile(String filename) throws IOException {

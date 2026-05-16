@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2019--2024 Cynthia Kop
+ Copyright 2019--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,9 +15,11 @@
 
 package charlie.terms.position;
 
-import charlie.exceptions.*;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
+import java.util.List;
+
+import charlie.util.NullStorageException;
 
 public class PositionTest {
   @Test
@@ -25,8 +27,12 @@ public class PositionTest {
     Position pos = Position.empty;
     assertTrue(pos.toString().equals("ε"));
     assertTrue(pos.equals(new FinalPos(0)));
+    Object o = new FinalPos(0);
+    assertTrue(pos.equals(o));
     assertTrue(pos.hashCode() == 1);
     assertFalse(pos.equals(new FinalPos(1)));
+    o = new FinalPos(1);
+    assertFalse(pos.equals(o));
     Position pos2 = new ArgumentPos(1, new FinalPos(2));
     assertTrue(pos2.hashCode() == 22);
     assertFalse(pos.equals(pos2));
@@ -35,8 +41,8 @@ public class PositionTest {
     assertTrue(pos.isEmpty());
     assertTrue(pos.isFinal());
     assertTrue(pos.queryChopCount() == 0);
-    assertThrows(InappropriatePatternDataException.class, () -> pos.queryHead());
-    assertThrows(InappropriatePatternDataException.class, () -> pos.queryTail());
+    assertThrows(IndexOutOfBoundsException.class, () -> pos.queryHead());
+    assertThrows(IndexOutOfBoundsException.class, () -> pos.queryTail());
     
     boolean ok = false;
     switch (pos) {
@@ -52,7 +58,7 @@ public class PositionTest {
   public void testFinalPosition() {
     Position pos = new FinalPos(3);
     assertTrue(pos.toString().equals("☆3"));
-    assertTrue(pos.equals(new FinalPos(3)));
+    assertTrue(pos.equals((Object)(new FinalPos(3))));
     assertTrue(pos.hashCode() == 4);
     assertFalse(pos.equals(new FinalPos(2)));
     assertFalse(pos.equals(new LambdaPos(new FinalPos(3))));
@@ -62,8 +68,8 @@ public class PositionTest {
     assertFalse(pos.isEmpty());
     assertTrue(pos.isFinal());
     assertTrue(pos.queryChopCount() == 3);
-    assertThrows(InappropriatePatternDataException.class, () -> pos.queryHead());
-    assertThrows(InappropriatePatternDataException.class, () -> pos.queryTail());
+    assertThrows(IndexOutOfBoundsException.class, () -> pos.queryHead());
+    assertThrows(IndexOutOfBoundsException.class, () -> pos.queryTail());
     
     boolean ok = false;
     switch (pos) {
@@ -78,8 +84,8 @@ public class PositionTest {
   @Test
   public void testArgumentPosition() {
     Position pos = new ArgumentPos(17, new MetaPos(2, new FinalPos(0)));
-    assertTrue(pos.toString().equals("17.!2.ε"));
-    assertTrue(pos.equals(new ArgumentPos(17, new MetaPos(2, Position.empty))));
+    assertTrue(pos.toString().equals("17.!2"));
+    assertTrue(pos.equals((Object)(new ArgumentPos(17, new MetaPos(2, Position.empty)))));
     assertTrue(pos.hashCode() == 17 + 7 * (2 + 7));
     assertFalse(pos.equals(new ArgumentPos(17, new ArgumentPos(2, new FinalPos(0)))));
     assertFalse(pos.equals(new MetaPos(17, new MetaPos(2, Position.empty))));
@@ -97,7 +103,7 @@ public class PositionTest {
       case MetaPos(int i, Position tail): break;
       case LambdaPos(Position tail): break;
       case ArgumentPos(int i, Position tail):
-        ok = i == 17 && tail.toString().equals("!2.ε");
+        ok = i == 17 && tail.toString().equals("!2");
     }
     assertTrue(ok);
   }
@@ -106,14 +112,14 @@ public class PositionTest {
   public void testMetaPosition() {
     Position pos = new MetaPos(2, new LambdaPos(new FinalPos(9)));
     assertTrue(pos.toString().equals("!2.0.☆9"));
-    assertTrue(pos.equals(new MetaPos(2, new LambdaPos(new FinalPos(9)))));
+    assertTrue(pos.equals((Position)(new MetaPos(2, new LambdaPos(new FinalPos(9))))));
     assertTrue(pos.hashCode() == 492);
     assertFalse(pos.equals(new MetaPos(2, new MetaPos(1, new FinalPos(9)))));
     assertFalse(pos.equals(new MetaPos(2, new LambdaPos(new FinalPos(8)))));
     assertFalse(pos.equals(new ArgumentPos(2, new LambdaPos(new FinalPos(9)))));
     assertFalse(pos.equals(new MetaPos(1, new LambdaPos(new FinalPos(9)))));
     Position pos2 = new ArgumentPos(12, new FinalPos(0));
-    assertTrue(pos.append(pos2).toString().equals("!2.0.12.ε"));
+    assertTrue(pos.append(pos2).toString().equals("!2.0.12"));
     assertFalse(pos.isEmpty());
     assertFalse(pos.isFinal());
     assertTrue(pos.queryHead() == -2);
@@ -133,8 +139,8 @@ public class PositionTest {
   @Test
   public void testLambdaPosition() {
     Position pos = new LambdaPos(new ArgumentPos(1, Position.empty));
-    assertTrue(pos.toString().equals("0.1.ε"));
-    assertTrue(pos.equals(new LambdaPos(new ArgumentPos(1, Position.empty))));
+    assertTrue(pos.toString().equals("0.1"));
+    assertTrue(pos.equals((Position)(new LambdaPos(new ArgumentPos(1, Position.empty)))));
     assertTrue(pos.hashCode() == 56);
     assertFalse(pos.equals(new ArgumentPos(1, Position.empty)));
     Position pos2 = new FinalPos(2);
@@ -149,7 +155,7 @@ public class PositionTest {
       case FinalPos(int k): break;
       case ArgumentPos(int i, Position tail): break;
       case MetaPos(int i, Position tail): break;
-      case LambdaPos(Position tail): ok = tail.toString().equals("1.ε");
+      case LambdaPos(Position tail): ok = tail.toString().equals("1");
     }
     assertTrue(ok);
   }
@@ -172,21 +178,23 @@ public class PositionTest {
   }
 
   @Test
-  public void testCorrectFullPositionParsing() throws CustomParserException {
+  public void testCorrectFullPositionParsing() throws PositionFormatException {
     Position pos = Position.parse("5.6.7");
-    assertTrue(pos.toString().equals("5.6.7.ε"));
-    pos = Position.parse("19.!12.ε");
-    assertTrue(pos.toString().equals("19.!12.ε"));
+    assertTrue(pos.toString().equals("5.6.7"));
+    pos = Position.parse("19.!12");
+    assertTrue(pos.toString().equals("19.!12"));
     pos = Position.parse("!2.1.");
-    assertTrue(pos.toString().equals("!2.1.ε"));
-    pos = Position.parse("0.19.12.ε");
-    assertTrue(pos.toString().equals("0.19.12.ε"));
-    pos = Position.parse("19.-1.12.ε");
-    assertTrue(pos.toString().equals("19.!1.12.ε"));
+    assertTrue(pos.toString().equals("!2.1"));
+    pos = Position.parse("0.19.12.e");
+    assertTrue(pos.toString().equals("0.19.12"));
+    pos = Position.parse("19.-1.12");
+    assertTrue(pos.toString().equals("19.!1.12"));
+    pos = Position.parse("e");
+    assertTrue(pos.toString().equals("ε"));
   }
 
   @Test
-  public void testCorrectPartialPositionParsing() throws CustomParserException {
+  public void testCorrectPartialPositionParsing() throws PositionFormatException {
     Position pos = Position.parse("1.254.3.*15");
     assertTrue(pos.toString().equals("1.254.3.☆15"));
     pos = Position.parse(("3.111.☆2"));
@@ -195,12 +203,46 @@ public class PositionTest {
 
   @Test
   public void testIncorrectParsing() {
-    assertThrows(CustomParserException.class, () -> Position.parse("1.254.*3.☆15"));
-    assertThrows(CustomParserException.class, () -> Position.parse("3.111.☆2ε"));
-    assertThrows(CustomParserException.class, () -> Position.parse("3.111.☆2.ε"));
-    assertThrows(CustomParserException.class, () -> Position.parse("1..254"));
-    assertThrows(CustomParserException.class, () -> Position.parse("5.1@.3"));
-    assertThrows(CustomParserException.class, () -> Position.parse("1.254.3.."));
+    assertThrows(PositionFormatException.class, () -> Position.parse("1.254.*3.☆15"));
+    assertThrows(PositionFormatException.class, () -> Position.parse("3.111.☆2ε"));
+    assertThrows(PositionFormatException.class, () -> Position.parse("3.111.☆2.ε"));
+    assertThrows(PositionFormatException.class, () -> Position.parse("1..254"));
+    assertThrows(PositionFormatException.class, () -> Position.parse("5.1@.3"));
+    assertThrows(PositionFormatException.class, () -> Position.parse("1.254.3.."));
+  }
+
+  @Test
+  public void testComparisonBetweenKinds() throws PositionFormatException {
+    Position emptyPos = Position.parse("ε");
+    Position finalPos = Position.parse("*3");
+    Position metaPos = Position.parse("-1.3");
+    Position lambdaPos = Position.parse("0");
+    Position argPos = Position.parse("1.2");
+    List<Position> posses = List.of(emptyPos, finalPos, metaPos, lambdaPos, argPos);
+    for (int i = 0; i < posses.size(); i++) {
+      assertTrue(posses.get(i).compareTo(posses.get(i)) == 0);
+      for (int j = i + 1; j < posses.size(); j++) {
+        assertTrue(posses.get(i).compareTo(posses.get(j)) < 0,
+                   "comparing " + posses.get(i) + " with " + posses.get(j));
+        assertTrue(posses.get(j).compareTo(posses.get(i)) > 0,
+                   "comparing " + posses.get(j) + " with " + posses.get(i));
+      }
+    }
+  }
+
+  @Test
+  public void testComparisonWithingKinds() {
+    Position tail1 = new ArgumentPos(1, Position.empty);
+    Position tail2 = new ArgumentPos(2, Position.empty);
+    Position meta1 = new MetaPos(1, tail1), meta2 = new MetaPos(1, tail2);
+    Position lamb1 = new LambdaPos(tail1), lamb2 = new LambdaPos(tail2);
+    Position arg1 = new ArgumentPos(5, tail1), arg2 = new ArgumentPos(5, tail2);
+    assertTrue(meta1.compareTo(meta2) < 0);
+    assertTrue(meta2.compareTo(meta1) > 0);
+    assertTrue(lamb1.compareTo(lamb2) < 0);
+    assertTrue(lamb2.compareTo(lamb1) > 0);
+    assertTrue(arg1.compareTo(arg2) < 0);
+    assertTrue(arg2.compareTo(arg1) > 0);
   }
 }
 

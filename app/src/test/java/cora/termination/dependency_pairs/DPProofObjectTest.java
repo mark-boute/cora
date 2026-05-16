@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2024 Cynthia Kop
+ Copyright 2024-2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -22,12 +22,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import charlie.util.FixedList;
 import charlie.trs.Rule;
 import charlie.trs.TRS;
 import charlie.reader.CoraInputReader;
 import cora.io.ProofObject;
 import cora.io.OutputModule;
-import cora.io.DefaultOutputModule;
 import cora.termination.dependency_pairs.processors.ProcessorProofObject;
 
 class DPProofObjectTest {
@@ -53,13 +53,13 @@ class DPProofObjectTest {
   public void testNotAccessible() {
     DPProofObject ob = new DPProofObject(makeAccessibilityProof(ProofObject.Answer.NO));
     assertTrue(ob.queryAnswer() == ProofObject.Answer.MAYBE);
-    OutputModule module = DefaultOutputModule.createUnicodeModule(exampleTrs());
+    OutputModule module = OutputModule.createUnicodeModule(exampleTrs());
     ob.justify(module);
     assertTrue(module.toString().equals("This is not accessible!\n\n"));
     // no effect of additional calls (which shouldn't be done anyway)
     ob.addProcessorProof(null);
     ob.setFailedProof(null);
-    module = DefaultOutputModule.createUnicodeModule(exampleTrs());
+    module = OutputModule.createUnicodeModule(exampleTrs());
     ob.justify(module);
     assertTrue(module.toString().equals("This is not accessible!\n\n"));
   }
@@ -82,7 +82,7 @@ class DPProofObjectTest {
     private static Problem helperProblem(Problem inp) {
       ArrayList<Rule> newrules = new ArrayList<Rule>();
       for (int i = 2; i < inp.getRuleList().size(); i++) newrules.add(inp.getRuleList().get(i));
-      return new Problem(inp.getDPList(), newrules, null, inp.getOriginalTRS(),
+      return new Problem(inp.getDPList(), FixedList.copy(newrules), null, inp.getOriginalTRS(),
                          false, inp.isInnermost(), inp.queryTerminationStatus());
     }
     public HelperC(Problem inp) {
@@ -130,13 +130,13 @@ class DPProofObjectTest {
       "***** We apply the helper 3 Processor on D4 = (P3, R2, f, c).\n\n" +
       "This is the rule-removal helper.\n\n" +
       "Processor output: { D5 = (P3, ø, f, c) }.\n\n";
-    OutputModule module = DefaultOutputModule.createUnicodeModule(exampleTrs());
+    OutputModule module = OutputModule.createUnicodeModule(exampleTrs());
     ob.justify(module);
     assertTrue(module.toString().equals(start));
     ob.setTerminating();
     ob.addProcessorProof(new HelperB(p4));
     assertTrue(ob.queryAnswer().equals(ProofObject.Answer.YES));
-    module = DefaultOutputModule.createUnicodeModule(exampleTrs());
+    module = OutputModule.createUnicodeModule(exampleTrs());
     ob.justify(module);
     start +=
       "***** We apply the helper 2 Processor on D5 = (P3, ø, f, c).\n\n" +
@@ -146,7 +146,7 @@ class DPProofObjectTest {
 
     ob.setFailedProof(p3);
     assertTrue(ob.queryAnswer().equals(ProofObject.Answer.MAYBE));
-    module = DefaultOutputModule.createUnicodeModule(exampleTrs());
+    module = OutputModule.createUnicodeModule(exampleTrs());
     ob.justify(module);
     assertTrue(module.toString().equals(start +
       "***** No progress could be made on DP problem D3 = (P3, R ∪ R_?, f, c).\n\n"));

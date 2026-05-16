@@ -27,7 +27,6 @@ import charlie.solvesmt.ExternalSmtSolver;
 import charlie.solvesmt.ProcessSmtSolver;
 import charlie.solvesmt.ProcessSmtSolver.PhysicalSolver;
 import cora.io.OutputModule;
-import cora.io.DefaultOutputModule;
 import cora.config.Settings;
 
 /**
@@ -42,7 +41,7 @@ public class Parameters {
   private Request _request;
   private SmtSolver _solver;
 
-  public enum Request { Print, Reduce, Termination, Computability };
+  public enum Request { Print, Reduce, Termination, Computability, Equivalence };
 
   public class WrongParametersException extends RuntimeException {
     public WrongParametersException(String reason) {
@@ -127,6 +126,12 @@ public class Parameters {
         }
         for (String s : args[index+1].split(",")) _disable.add(s);
         return index+2;
+      case "-e": case "--equivalence":
+        setRequest(Request.Equivalence);
+        String equation = "";
+        for (index++; index < args.length; index++) equation += args[index];
+        if (!equation.equals("")) _input.add(equation);
+        return index+1;
       case "-g": case "--strategy":
         if (index + 1 == args.length) {
           throw new WrongParametersException("Parameter " + arg + " without a given strategy!");
@@ -257,22 +262,9 @@ public class Parameters {
   /** This returns the OutputModule to be used for printing, once the given TRS is loaded. */
   public OutputModule queryOutputModule(TRS trs) {
     return switch (_style) {
-      case null -> DefaultOutputModule.createDefaultModule(trs);
-      case OutputModule.Style.Plain -> DefaultOutputModule.createPlainModule(trs);
-      case OutputModule.Style.Unicode -> DefaultOutputModule.createUnicodeModule(trs);
-    };
-  }
-
-  /**
-   * This returns the OutputModule to be used for printing, when there is no TRS.  Note that if a
-   * TRS is loaded, this may not properly print terms (if there is an overlap between variable and
-   * function names).
-   */
-  public OutputModule queryOutputModule() {
-    return switch (_style) {
-      case null -> DefaultOutputModule.createDefaultModule();
-      case OutputModule.Style.Plain -> DefaultOutputModule.createPlainModule();
-      case OutputModule.Style.Unicode -> DefaultOutputModule.createUnicodeModule();
+      case null -> OutputModule.createUnicodeModule(trs);
+      case OutputModule.Style.Plain -> OutputModule.createPlainModule(trs);
+      case OutputModule.Style.Unicode -> OutputModule.createUnicodeModule(trs);
     };
   }
 
@@ -292,6 +284,8 @@ public class Parameters {
       .append(System.lineSeparator());
     str.append("    -c | --computability        Try to prove or disprove universal computability " +
       "of the given TRS.")
+      .append(System.lineSeparator());
+    str.append("    -e | --equivalence <equation> Starts the interactive equivalence prover.")
       .append(System.lineSeparator());
     str.append("    -g | --strategy             Set the given strategy for reduction.  " +
       "Currently supported strategies are full, innermost and call-by-value (cbv).")

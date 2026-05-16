@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,7 +15,7 @@
 
 package charlie.terms.position;
 
-import charlie.exceptions.NullStorageException;
+import charlie.util.NullStorageException;
 
 public record LambdaPos(Position tail) implements Position {
   public LambdaPos(Position tail) {
@@ -25,9 +25,7 @@ public record LambdaPos(Position tail) implements Position {
     this.tail = tail;
   }
 
-  public String toString() {
-    return "0." + tail.toString();
-  }
+  public String toString() { return toStringDefault(); }
 
   public boolean equals(Position other) {
     switch (other) {
@@ -36,12 +34,27 @@ public record LambdaPos(Position tail) implements Position {
     }
   }
 
+  public boolean equals(Object other) {
+    if (other instanceof Position p) return equals(p);
+    return false;
+  }
+
   public int hashCode() {
     return 7 * tail.hashCode();
   }
 
   public Position append(Position p) {
     return new LambdaPos(this.tail.append(p));
+  }
+
+  public int queryChopCount() {
+    return tail.queryChopCount();
+  }
+
+  public int compareTo(Position other) {
+    if (other.isFinal()) return 1;
+    if (other instanceof LambdaPos(Position t)) return this.tail.compareTo(t);
+    return - other.queryHead();
   }
 
   public int queryHead() {

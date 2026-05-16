@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2019--2024 Cynthia Kop
+ Copyright 2019--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,7 +15,6 @@
 
 package charlie.terms;
 
-import com.google.common.collect.ImmutableList;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.TreeMap;
@@ -23,10 +22,11 @@ import java.util.TreeSet;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
-import charlie.exceptions.*;
 import charlie.util.Pair;
 import charlie.terms.position.Position;
 import charlie.terms.position.FinalPos;
+import charlie.terms.replaceable.Replaceable;
+import charlie.terms.replaceable.ReplaceableList;
 
 /**
  * A TermInherit supplies default functionality for all instances of Term.
@@ -91,25 +91,26 @@ abstract class TermInherit implements Term {
   /**
    * Refreshes bound variables in the given list if necessary to ensure that they do not overlap
    * with the variables in the given "avoid" set (to ensure well-behavedness of terms), and stores
-   * the resulting terms (or original terms if they already do not overlap) in the given builder.
+   * the resulting terms (or original terms if they already do not overlap) in the given list
+   * updatedSubs.
    * Note that subs itself is not changed.  The function returns the resulting combined set of
    * bound variables, including all those in "include".
    */
   protected static ReplaceableList calculateBoundVariablesAndRefreshSubs(List<Term> subs,
                                         ReplaceableList include, ReplaceableList avoid,
-                                        ImmutableList.Builder<Term> builder) {
+                                        List<Term> updatedSubs) {
     for (int i = 0; i < subs.size(); i++) {
       Term sub = subs.get(i);
       ReplaceableList vs = sub.boundVars();
       if (vs.size() > 0) {
         if (!vs.getOverlap(avoid).isEmpty()) {
-          sub = sub.refreshBinders();
+          sub = sub.renameAndRefreshBinders(new TreeMap<Variable,Variable>());
           vs = sub.boundVars();
         }
         if (include.size() == 0) include = vs;
         else include = include.combine(vs);
       }
-      builder.add(sub);
+      updatedSubs.add(sub);
     }
     return include;
   }
@@ -151,7 +152,7 @@ abstract class TermInherit implements Term {
   public boolean isClosed() {
     ReplaceableList vs = freeReplaceables();
     for (Replaceable x : vs) {
-      if (x.queryReplaceableKind() == Replaceable.KIND_BINDER) return false;
+      if (x.queryReplaceableKind() == Replaceable.Kind.BINDER) return false;
     }
     return true;
   }
@@ -172,19 +173,9 @@ abstract class TermInherit implements Term {
   public boolean isTrueTerm() {
     ReplaceableList vs = freeReplaceables();
     for (Replaceable x : vs) {
-      if (x.queryReplaceableKind() == Replaceable.KIND_METAVAR) return false;
+      if (x.queryReplaceableKind() == Replaceable.Kind.METAVAR) return false;
     }
     return true;
-  }
-
-  /**
-   * This creates a fresh substitution for matching and calls match(other, subst) with it.  Note
-   * that this retuns null if and only if match(other,subst) does NOT return null.
-   */
-  public final Substitution match(Term other) {
-    Substitution gamma = new Subst();
-    if (match(other, gamma) == null) return gamma;
-    return null;
   }
 
   /** Helper function to return the current classname for use in Exceptions. */
@@ -215,7 +206,7 @@ abstract class TermInherit implements Term {
       if (p.fst().equals(other)) {
         // check that other doesn't freely contain binder variables that are bound in us
         for (Replaceable x : other.freeReplaceables()) {
-          if (x.queryReplaceableKind() == Replaceable.KIND_BINDER &&
+          if (x.queryReplaceableKind() == Replaceable.Kind.BINDER &&
               !_freeReplaceables.contains(x)) return false;
         }
         return true;
@@ -252,9 +243,8 @@ abstract class TermInherit implements Term {
       case FinalPos(int k):
         if (k == 0) {
           if (!queryType().equals(replacement.queryType())) {
-            throw new TypingException(queryMyClassName(), "replaceSubterm", "replacement term " +
-                        replacement.toString(), replacement.queryType().toString(),
-                        queryType().toString());
+            throw new TypingException("Typing error: cannot replace ", this, " (of type ",
+              queryType(), ") by ", replacement, " (of type ", replacement.queryType(), ").");
           }
           return replacement;
         }
@@ -279,11 +269,6 @@ abstract class TermInherit implements Term {
     return null;
   }
 
-  /** Returns the present term with all binder-variables replaced by fresh ones. */
-  public final Term refreshBinders() {
-    return substitute(new Subst());
-  }
-
   /** Applies the current term (with functional type) to other. */
   public final Term apply(Term other) {
     ArrayList<Term> args = new ArrayList<Term>();
@@ -306,16 +291,6 @@ abstract class TermInherit implements Term {
     TreeMap<Variable,Integer> mu = new TreeMap<Variable,Integer>();
     TreeMap<Variable,Integer> xi = new TreeMap<Variable,Integer>();
     return alphaEquals(other, mu, xi, 1);
-  }
-
-  /**
-   * Returns whether this term and other are equal up to a renaming of the free variables.
-   * <p>
-   * Implementation note: default implementation checks whether the terms mutually match.
-   * More efficient solutions are conceivable.
-   */
-  public final boolean equalsModuloRenaming(Term other) {
-    return null != this.match(other) && null != other.match(this);
   }
 
   /** This method verifies equality to another Java object. */
@@ -352,26 +327,29 @@ abstract class TermInherit implements Term {
   public int numberArguments() { return 0; }
   public int numberMetaArguments() { return 0; }
   public int numberTupleArguments() { return 0; }
-  public ImmutableList<Term> queryArguments() { return ImmutableList.of(); }
-  public ImmutableList<Term> queryTupleArguments() { return ImmutableList.of(); }
-  public ImmutableList<Term> queryMetaArguments() { return ImmutableList.of(); }
+  public ArrayList<Term> queryArguments() { return new ArrayList<Term>(); }
+  public ArrayList<Term> queryTupleArguments() { return new ArrayList<Term>(); }
+  public ArrayList<Term> queryMetaArguments() { return new ArrayList<Term>(); }
   public Term queryHead() { return this; }
   public Term queryArgument(int i) {
-    throw new IndexingException(queryMyClassName(), "queryArgument", i);
+    throw new IndexOutOfBoundsException(queryMyClassName() + "::queryArgument(" + i + ") called.");
   }
   public Term queryMetaArgument(int i) {
-    throw new IndexingException(queryMyClassName(), "queryMetaArgument", i);
+    throw new IndexOutOfBoundsException(queryMyClassName() + "::queryMetaArgument(" + i +
+      ") called.");
   }
   public Term queryTupleArgument(int i) {
-    throw new IndexingException(queryMyClassName(), "queryTupleArgument", i);
-  }
-  public Term queryAbstractionSubterm() {
-    throw new InappropriatePatternDataException(queryMyClassName(), "queryAbstractionSubterm",
-                                               "lambda-abstractions");
+    throw new IndexOutOfBoundsException(queryMyClassName() + "::queryTupleArgument(" + i +
+      ") called.");
   }
   public Term queryImmediateHeadSubterm(int i) {
     if (i == 0) return this;
-    throw new IndexingException(queryMyClassName(), "queryImmediateHeadSubterm", i);
+    throw new IndexOutOfBoundsException(queryMyClassName() + "::queryImmediateHeadSubterm(" + i +
+      ") called.");
+  }
+  public Term queryAbstractionSubterm() {
+    throw new InappropriatePatternDataException(queryMyClassName(), "queryAbstractionSubterm",
+      "abstractions");
   }
   public FunctionSymbol queryRoot() {
     throw new InappropriatePatternDataException(queryMyClassName(),"queryRoot","functional terms");

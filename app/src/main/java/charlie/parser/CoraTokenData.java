@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -18,13 +18,14 @@ package charlie.parser;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.function.Function;
 import charlie.parser.lib.*;
 
 /**
  * This file defines the tokens used to lex and parse a file or string using Cora's internal
- * input format.  It is used by the CoraParser and intentionally not public.
+ * input format.  It is used by the CoraParser, but may be extended by other parsers.
  */
-class CoraTokenData {
+public class CoraTokenData {
   /* First we define constants for all the tokens. */
   public static final String IDENTIFIER     = "IDENTIFIER";
   public static final String BRACKETOPEN    = "BRACKETOPEN";
@@ -42,7 +43,7 @@ class CoraTokenData {
   public static final String ARROW          = "ARROW";
   public static final String PUBLIC         = "PUBLIC";
   public static final String PRIVATE        = "PRIVATE";
-  // The following are only used for constrained TRSs. */
+  /* The following are only used for constrained TRSs. */
   public static final String INTEGER        = "INTEGER";
   public static final String TRUE           = "TRUE";
   public static final String FALSE          = "FALSE";
@@ -206,6 +207,24 @@ class CoraTokenData {
   /** Returns a TokenQueue that goes through the given string, tokenising for a constrained TRS. */
   public static TokenQueue getConstrainedStringLexer(String text) {
     return setupLexer(LexerFactory.createStringLexer(getConstrainedTokens(), text), true);
+  }
+
+  /**
+   * Returns a TokenQueue for the given string, which accepts both the constrained tokens and the
+   * given list of additional tokens.  These are considered a top priority in the token list.
+   * Moreover, the given function is applied to the resulting base lexer to allow it to make
+   * potential changes.
+   */
+  public static TokenQueue getUpdatedConstrainedStringLexer(String text,
+                                                            Function<Lexer,Lexer> lexerChanger,
+                                                            String ... extraTokens) {
+    ArrayList<String> tmp = new ArrayList<String>();
+    Collections.addAll(tmp, extraTokens);
+    Collections.addAll(tmp, shared);
+    Collections.addAll(tmp, ctokens);
+    String[] toks = tmp.toArray(new String[tmp.size()]);
+    Lexer lexer = LexerFactory.createStringLexer(toks, text);
+    return setupLexer(lexerChanger.apply(lexer), true);
   }
 
   /**

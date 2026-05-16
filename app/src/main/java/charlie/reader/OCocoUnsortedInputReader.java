@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,17 +15,16 @@
 
 package charlie.reader;
 
-import com.google.common.collect.ImmutableList;
 import java.io.IOException;
 import java.util.ArrayList;
 
-import charlie.exceptions.IllegalRuleException;
-import charlie.exceptions.ParseException;
-import charlie.exceptions.UnexpectedPatternException;
+import charlie.util.FixedList;
 import charlie.util.LookupMap;
 import charlie.types.*;
 import charlie.parser.lib.Token;
+import charlie.parser.lib.ParsingErrorMessage;
 import charlie.parser.lib.ErrorCollector;
+import charlie.parser.lib.ParsingException;
 import charlie.parser.Parser;
 import charlie.parser.Parser.*;
 import charlie.parser.OCocoParser;
@@ -59,8 +58,12 @@ public class OCocoUnsortedInputReader {
     _errors = collector;
   }
 
-  private void storeError(String message, Token token) {
-    _errors.addError(token.getPosition() + ": " + message);
+  private void storeError(Token token, String message) {
+    _errors.addError(new ParsingErrorMessage(token, message));
+  }
+
+  private void storeError(Token token, IllegalRuleException e) {
+    _errors.addError(new ParsingErrorMessage(token, e));
   }
 
   // =============================== READING PARSERTERMS INTO TERMS ===============================
@@ -76,15 +79,15 @@ public class OCocoUnsortedInputReader {
   private Term makeTerm(ParserTerm pterm) {
     Token token;
     String name;
-    ImmutableList<ParserTerm> args;
+    FixedList<ParserTerm> args;
 
     switch (pterm) {
       case Identifier(Token t, String n):
         token = t;
         name = n;
-        args = ImmutableList.of();
+        args = FixedList.of();
         break;
-      case Application(Token t1, Identifier(Token t2, String n), ImmutableList<ParserTerm> a):
+      case Application(Token t1, Identifier(Token t2, String n), FixedList<ParserTerm> a):
         token = t1;
         name = n;
         args = a;
@@ -98,7 +101,7 @@ public class OCocoUnsortedInputReader {
     Variable x = _symbols.lookupVariable(name);
     if (x != null) {
       if (args.size() == 0) return x;
-      storeError("Variable " + name + " used as root of a functional term.", token);
+      storeError(token, "Variable " + name + " used as root of a functional term.");
     }
 
     // otherwise, the head must be a function symbol
@@ -108,8 +111,8 @@ public class OCocoUnsortedInputReader {
       _symbols.addFunctionSymbol(f);
     }
     else if (f.queryArity() != args.size()) {
-      storeError("Function symbol " + name + " was previously used with " +
-        f.queryArity() + " arguments, but is here used with " + args.size() + ".", token);
+      storeError(token, "Function symbol " + name + " was previously used with " +
+        f.queryArity() + " arguments, but is here used with " + args.size() + ".");
       f = TermFactory.createConstant(name, args.size());
     }
 
@@ -135,10 +138,10 @@ public class OCocoUnsortedInputReader {
     for (String name : vars.keySet()) {
       Variable x = TermFactory.createVar(name, vars.get(name).type());
       if (_symbols.lookupFunctionSymbol(name) != null) {
-        storeError("Duplicate symbol: " + name + " occurs both as a variable and as a function " +
-          "symbol!", vars.get(name).token());
+        storeError(vars.get(name).token(), "Duplicate symbol: " + name + " occurs both as a " +
+          "variable and as a function symbol!");
         // let's not keep giving this error for every rule; just give up
-        throw new ParseException(_errors.queryCollectedMessages());
+        throw _errors.generateException();
       }
       _symbols.addVariable(x);
     }
@@ -151,7 +154,7 @@ public class OCocoUnsortedInputReader {
 
     try { return TrsFactory.createRule(l, r, TrsFactory.MSTRS); }
     catch (IllegalRuleException e) {
-      storeError(e.queryProblem(), rule.token());
+      storeError(rule.token(), e);
       return null;
     }
   }
@@ -164,7 +167,7 @@ public class OCocoUnsortedInputReader {
         return t.equals(TypeFactory.defaultSort);
       case Arrow(Type a, Type b):
         return isUnsorted(a) && isUnsorted(b);
-      case Product(ImmutableList<Type> args):
+      case Product(FixedList<Type> args):
         return false;
     }
   }
@@ -176,8 +179,8 @@ public class OCocoUnsortedInputReader {
     for (String name : decl.keySet()) {
       Type t = decl.get(name).type();
       if (!isUnsorted(t)) {
-        storeError("Many-sorted function symbol " + name + " cannot occur in an unsorted TRS.",
-                   decl.get(name).token());
+        storeError(decl.get(name).token(),
+                   "Many-sorted function symbol " + name + " cannot occur in an unsorted TRS.");
         problems = true;
       }
       _symbols.addFunctionSymbol(TermFactory.createConstant(name, t));
@@ -193,7 +196,7 @@ public class OCocoUnsortedInputReader {
     if (!decl.isEmpty()) {  // if at least one function symbol is declared, they should all be!
       for (FunctionSymbol f : alphabet.getSymbols()) {
         if (!decl.containsKey(f.queryName())) {
-          _errors.addError("Undeclared function symbol (not allowed when SIG is given): " +
+          storeError(null, "Undeclared function symbol (not allowed when SIG is given): " +
                            f.queryName());
         }
       }
@@ -205,7 +208,7 @@ public class OCocoUnsortedInputReader {
 
   /**
    * Reads the given term from string, given that all the variables in it are listed in vars.
-   * @throws ParseException if either parsing or typing failed.
+   * @throws ParsingException if either parsing or typing failed.
    */
   public static Term readTerm(String str, String vars) {
     ErrorCollector collector = new ErrorCollector();
@@ -218,9 +221,7 @@ public class OCocoUnsortedInputReader {
     Term ret = null;
     if (collector.queryErrorCount() == 0) ret = rd.makeTerm(pterm);
     // NOT using else here, because errors may also arise from makeUnsortedTerm!
-    if (collector.queryErrorCount() > 0) {
-      throw new ParseException(collector.queryCollectedMessages());
-    }
+    if (collector.queryErrorCount() > 0) throw collector.generateException();
     return ret;
   }
 
@@ -231,15 +232,13 @@ public class OCocoUnsortedInputReader {
   static TRS readParserProgram(ParserProgram trs, ErrorCollector collector) {
     OCocoUnsortedInputReader rd = new OCocoUnsortedInputReader(new SymbolData(), collector);
     TRS ret = rd.makeTRS(trs);
-    if (collector.queryErrorCount() > 0) {
-      throw new ParseException(collector.queryCollectedMessages());
-    }
+    if (collector.queryErrorCount() > 0) throw collector.generateException();
     return ret;
   }
 
   /**
    * Parses the given program, and returns the unsorted TRS that it defines.
-   * If the string is not correctly formed, this may throw a ParseException.
+   * If the string is not correctly formed, this may throw a ParsingException.
    */
   public static TRS readTrsFromString(String str) {
     ErrorCollector collector = new ErrorCollector();
@@ -249,7 +248,7 @@ public class OCocoUnsortedInputReader {
 
   /**
    * Parses the given file, which should be a .trs or .mstrs file, into a many-sorted TRS.
-   * This may throw a ParseException, or an IOException if something goes wrong with the file
+   * This may throw a ParsingException, or an IOException if something goes wrong with the file
    * reading.
    */
   public static TRS readTrsFromFile(String filename) throws IOException {

@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2019--2024 Cynthia Kop
+ Copyright 2019--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -39,9 +39,8 @@ public sealed interface Type permits
   default boolean isProductType() { return false; }
 
   /**
-   * Returns true if the only base types sorts occurring in this type are theory sorts --
-   * that is, the sorts specifically created as theory sorts, accessible from the type
-   * factory.
+   * Returns true if the only base types occurring in this type are theory sorts -- that is, the
+   * sorts specifically created as theory sorts, accessible from the type factory.
    */
   boolean isTheoryType();
 
@@ -51,10 +50,10 @@ public sealed interface Type permits
   /** Returns whether the given Type is equal to us. */
   boolean equals(Type type);
 
-  /** For σ1 → ,,, → σm → τ, returns m. */
+  /** For σ1 → ,,, → σm → τ with τ not an arrow type, returns m. */
   default int queryArity() { return 0; }
 
-  /** For σ1 → ,,, → σm → τ, returns τ */
+  /** For σ1 → ,,, → σm → τ with τ not an arrow type, returns τ */
   Type queryOutputType();
 
   /**
@@ -66,14 +65,15 @@ public sealed interface Type permits
 
   /**
    * Returns the number of immediate subtypes.
-   * For an arrow tpye, this is 2.  For a product tpye A_1 x ... x A_n, this is n.
+   * For an arrow tpye, this is 2.  For a product type A_1 x ... x A_n, this is n.
    * For a base type, this is 0.
    */
   int numberSubtypes();
 
   /**
    * If i is between 1 and numberSubtypes(), this returns the corresponding subtype (from left to
-   * right) of the type.  Otherwise, an IndexingException is thrown.
+   * right) of the type.  Otherwise, an IndexOutOfBoundsException is thrown.
    */
   Type subtype(int i);
 }
+

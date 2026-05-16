@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,17 +15,17 @@
 
 package charlie.terms;
 
-import com.google.common.collect.ImmutableList;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
-import charlie.exceptions.*;
 import charlie.util.Pair;
+import charlie.util.NullStorageException;
 import charlie.types.Type;
 import charlie.terms.position.Position;
 import charlie.terms.position.MetaPos;
+import charlie.terms.replaceable.ReplaceableList;
 
 /**
  * A MetaApplication is a term of the form Z⟨s1,...,sk⟩ where Z is a meta-variable with arity
@@ -34,7 +34,7 @@ import charlie.terms.position.MetaPos;
  */
 class MetaApplication extends TermInherit {
   public MetaVariable _metavar;
-  public ImmutableList<Term> _args;
+  public ArrayList<Term> _args;
 
   /**
    * This constructor is used to create a term mvar⟨s1,...,sk⟩ with k ≥ 1.
@@ -52,9 +52,9 @@ class MetaApplication extends TermInherit {
         "without arguments is just a non-binder variable.");
     }
     if (args.size() != mvar.queryArity()) {
-      throw new ArityException("MetaApplication", "constructor", "meta-variable " +
-        mvar.queryName() + " has arity " + mvar.queryArity() + " but " + args.size() +
-        " arguments are given.");
+      throw new TypingException("Arity error constructing meta-variable application: " +
+        "meta-variable ", mvar, " has arity " + mvar.queryArity() + " but is given " +
+        args.size() + " arguments.");
     }
 
     for (int i = 0; i < args.size(); i++) {
@@ -64,16 +64,16 @@ class MetaApplication extends TermInherit {
           "meta-variable application for " + mvar.queryName() + ".");
       }
       if (!arg.queryType().equals(mvar.queryInputType(i+1))) {
-        throw new TypingException("MetaApplication", "constructor", "arg " + (i+1) + " of " +
-          mvar.toString(), arg.queryType().toString(), mvar.queryInputType(i+1).toString());
+        throw new TypingException("Typing error constructing meta-variable application: " +
+          "imput type " + (i+1) + " of meta-variable ", mvar, " is ", mvar.queryInputType(i+1) +
+          ", while the argument term ", arg, " has type ", arg.queryType());
       }
     }
-    ImmutableList.Builder<Term> builder = ImmutableList.<Term>builder();
+    _args = new ArrayList<Term>();
     ReplaceableList empty = ReplaceableList.EMPTY;
     ReplaceableList start = new ReplaceableList(_metavar);
     ReplaceableList frees = calculateFreeReplaceablesForSubterms(args, start);
-    ReplaceableList bounds = calculateBoundVariablesAndRefreshSubs(args, empty, frees, builder);
-    _args = builder.build();
+    ReplaceableList bounds = calculateBoundVariablesAndRefreshSubs(args, empty, frees, _args);
     setVariables(frees, bounds);
   }
 
@@ -113,14 +113,15 @@ class MetaApplication extends TermInherit {
   }
 
   /** @return the list of meta-arguments */
-  public ImmutableList<Term> queryMetaArguments() {
-    return _args;
+  public ArrayList<Term> queryMetaArguments() {
+    return new ArrayList<Term>(_args);
   }
 
   /** If this term is Z⟨s1,...,sk⟩, returns si. */
   public Term queryMetaArgument(int i) {
     if (i <= 0 || i > _args.size()) {
-      throw new IndexingException("MetaApplication", "queryMetaArgument", i, 1, _args.size());
+      throw new IndexOutOfBoundsException("MetaApplication::queryMetaArgument(" + i + ") called " +
+        "on meta-variable application with " + _args.size() + " arguments.");
     }
     return _args.get(i-1);
   }
@@ -173,107 +174,45 @@ class MetaApplication extends TermInherit {
       case MetaPos(int index, Position tail):
         if (index <= _args.size()) return _args.get(index-1).querySubterm(tail);
       default:
-        throw new IndexingException("MetaApplication", "querySubterm", toString(), pos.toString());
+        throw new InvalidPositionException(this, pos, "querying subterm of meta-application");
     }
   }
 
   /**
    * @return a copy of the term with the subterm at the given (non-empty) position replaced by
-   * replacement, if such a position exists; otherwise throws an IndexingException.
+   * replacement, if such a position exists; otherwise throws an InvalidPositionException.
    */
   public Term replaceSubtermMain(Position pos, Term replacement) {
     switch (pos) {
       case MetaPos(int index, Position tail):
         if (index <= _args.size()) {
-          ArrayList<Term> newargs = new ArrayList<Term>(_args);
-          newargs.set(index-1, _args.get(index-1).replaceSubterm(tail, replacement));
-          return new MetaApplication(_metavar, newargs);
+          Term tmp = _args.get(index-1);
+          _args.set(index-1, tmp.replaceSubterm(tail, replacement));
+          Term ret = new MetaApplication(_metavar, _args);
+          _args.set(index-1, tmp);
+          return ret;
         }
       default:
-        throw new IndexingException("MetaApplication","replaceSubterm",toString(),pos.toString());
+        throw new InvalidPositionException(this, pos, "replacing subterm of meta-application");
     }
   }
 
   /**
-   * This method replaces each variable x in the term by gamma(x) (or leaves x alone if x is not
-   * in the domain of gamma), and each meta-application Z[s1,...,sk] with γ(Z) = λx1...xk.t by
-   * t[x1:=s1γ,...,xk:=skγ]; the result is returned.
+   * This method constructs a copy of the current meta-application, where the binder variables are
+   * renamed using renaming, and all lambdas also have their binders refreshed.
    */
-  public Term substitute(Substitution gamma) {
-    if (gamma == null) throw new NullPointerException("Substitution in Application::substitute");
-    ArrayList<Term> newArgs = new ArrayList<Term>();
-    for (int i = 0; i < _args.size(); i++) newArgs.add(_args.get(i).substitute(gamma));
-    Term value = gamma.get(_metavar);
-    if (value == null) return new MetaApplication(_metavar, newArgs);
-    Substitution delta = new Subst();
-    Term v = value;
-    for (int i = 0; i < newArgs.size(); i++) {
-      if (!v.isAbstraction()) {
-        throw new ArityException("MetaApplication", "substitute", "trying to substitute " +
-          "meta-variable in " + toString() + " by " + value.toString() +
-          ": there should be " + newArgs.size() + " abstractions!");
+  public Term renameAndRefreshBinders(Map<Variable,Variable> renaming) {
+    ArrayList<Term> args = new ArrayList<Term>(_args);
+    boolean changed = false;
+    for (int i = 0; i < args.size(); i++) {
+      Term other = args.get(i).renameAndRefreshBinders(renaming);
+      if (other != args.get(i)) {
+        changed = true;
+        args.set(i, other);
       }
-      Variable x = v.queryVariable();
-      v = v.queryAbstractionSubterm();
-      delta.replace(x, newArgs.get(i));
     }
-    return v.substitute(delta);
-  }
-
-  /**
-   * This method either extends gamma so that <this term> gamma = other and returns null, or
-   * returns a string describing why other is not an instance of gamma.
-   * This function may only be called if the meta-application is a semi-pattern; that is, the
-   * arguments to this meta-variable are all binder variables, and are substituted to distinct
-   * binder variables.  If any of the arguments violates this restriction, a
-   * PatternRequiredException is thrown.
-   */
-  public String match(Term other, Substitution gamma) {
-    if (other == null) throw new NullPointerException("argument term for MetaApplication::match");
-    if (gamma == null) throw new NullPointerException("substitution for MetaApplication::match");
-    // get all the substituted arguments, and make sure they are distinct bound variables
-    ArrayList<Variable> substitutedArgs = new ArrayList<Variable>();
-    TreeSet<Variable> set = new TreeSet<Variable>();
-    for (int i = 0; i < _args.size(); i++) {
-      if (!_args.get(i).isVariable()) throw new PatternRequiredException(toString(), "match",
-        "argument " + (i+1) + " (" + _args.get(i) + ") is not a variable.");
-      Variable x = _args.get(i).queryVariable();
-      if (!x.isBinderVariable()) throw new PatternRequiredException(toString(), "match",
-        "argument " + (i+1) + " ( " + x.toString() + ") is not a binder variable.");
-      Term replacement = gamma.get(x);
-      if (replacement == null) throw new PatternRequiredException(toString(), "match",
-        "argument " + (i+1) + " ( " + x.toString() + ") is not bound above " + toString() + ".");
-      if (!replacement.isVariable()) throw new PatternRequiredException(toString(), "match",
-        "argument " + (i+1) + " ( " + x.toString() + ") is substituted to " +
-        replacement.toString() + " in the context, which is not a variable.");
-      Variable y = replacement.queryVariable();
-      if (!y.isBinderVariable()) throw new PatternRequiredException(toString(), "match",
-        "argument " + (i+1) + " ( " + x.toString() + ") is substituted to " +
-        y.toString() + " in the context, which is a non-binder variable.");
-      substitutedArgs.add(y);
-      if (set.contains(y)) throw new PatternRequiredException(toString(), "match",
-        "duplicate argument to meta-variable: argument " + (i+1) + " ( " + x.toString() + ") is " +
-        "substituted to " + y.toString() + " which occurred before.");
-      set.add(y);
-    }
-    // create abstraction
-    Term ret = other;
-    for (int i = substitutedArgs.size()-1; i >= 0; i--) {
-      ret = new Abstraction(substitutedArgs.get(i), ret);
-    }
-    // check if the type matches (and perhaps a previous match), and add the mapping!
-    Term previous = gamma.get(_metavar);
-    if (previous == null) {
-      if (!other.queryType().equals(queryType())) {
-        return "Cannot match " + toString() + " against " + other.toString() + " as types do not " +
-          "match.";
-      }
-      gamma.extend(_metavar, ret);
-      return null;
-    }
-    else if (previous.equals(ret)) return null;
-    else return "Meta-variable " + _metavar.toString() + " is mapped to both " +
-      previous.toString() + " and to " + ret.toString() + ".";
+    if (!changed) return this;
+    return new MetaApplication(_metavar, args);
   }
 
   /**

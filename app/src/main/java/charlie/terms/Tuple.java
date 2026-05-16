@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023-2024 Cynthia Kop
+ Copyright 2023-2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,23 +15,24 @@
 
 package charlie.terms;
 
-import com.google.common.collect.ImmutableList;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import charlie.exceptions.*;
+import charlie.util.FixedList;
+import charlie.util.NullStorageException;
 import charlie.util.Pair;
 import charlie.types.Type;
 import charlie.types.TypeFactory;
 import charlie.terms.position.Position;
 import charlie.terms.position.ArgumentPos;
+import charlie.terms.replaceable.ReplaceableList;
 
 /**
  * A tuple term is a term of the form ⦇t1,..., tk⦈, with k ≥ 2.
  */
 public class Tuple extends TermInherit {
-  private ImmutableList<Term> _components;
+  private ArrayList<Term> _components;
   private Type _tupleType;
 
   /** This private method does correctness checks and sets up the variables. */
@@ -45,17 +46,16 @@ public class Tuple extends TermInherit {
     }
 
     // configure the set of free variables for this term
-    ImmutableList.Builder<Term> builder = ImmutableList.<Term>builder();
+    _components = new ArrayList<Term>();
     ReplaceableList empty = ReplaceableList.EMPTY;
     ReplaceableList frees = calculateFreeReplaceablesForSubterms(tms, empty);
-    ReplaceableList bounds = calculateBoundVariablesAndRefreshSubs(tms, empty, frees, builder);
-    _components = builder.build();
+    ReplaceableList bounds = calculateBoundVariablesAndRefreshSubs(tms, empty, frees, _components);
     setVariables(frees, bounds);
 
     // set the type
-    ImmutableList<Type> tmsTy =
-      tms.stream().map(Term::queryType).collect(ImmutableList.toImmutableList());
-    _tupleType = TypeFactory.createProduct(tmsTy);
+    FixedList.Builder<Type> tmsTy = new FixedList.Builder<Type>();
+    for (Term t : tms) tmsTy.add(t.queryType());
+    _tupleType = TypeFactory.createProduct(tmsTy.build());
   }
 
   // Constructors ----------------------------------------------------------------------------------
@@ -128,13 +128,12 @@ public class Tuple extends TermInherit {
   }
 
   @Override
-  public ImmutableList<Term> queryTupleArguments() { return _components; }
+  public ArrayList<Term> queryTupleArguments() {
+    return new ArrayList<Term>(_components);
+  }
 
   @Override
   public Term queryTupleArgument(int i) {
-    if (i <= 0 || i > _components.size()) {
-      throw new IndexingException("Tuple", "queryTupleArgument", i, 1, _components.size());
-    }
     return _components.get(i-1);
   }
 
@@ -206,7 +205,7 @@ public class Tuple extends TermInherit {
 
   /**
    * Returns the subterm at the given (non-empty) position, assuming that this is indeed a position
-   * of the current term.  If not, an IndexingException is thrown.
+   * of the current term.  If not, an InvalidPositionException is thrown.
    */
   @Override
   public Term querySubtermMain(Position pos) {
@@ -216,7 +215,7 @@ public class Tuple extends TermInherit {
           return _components.get(index-1).querySubterm(tail);
         }
       default:
-        throw new IndexingException("Tuple", "querySubterm", toString(), pos.toString());
+        throw new InvalidPositionException(this, pos, "querying subterm of tuple");
     }
   }
 
@@ -229,45 +228,33 @@ public class Tuple extends TermInherit {
     switch (pos) {
       case ArgumentPos(int index, Position tail):
         if (index <= _components.size()) {
-          ArrayList<Term> newcomps = new ArrayList<Term>(_components);
-          newcomps.set(index - 1, newcomps.get(index - 1).replaceSubterm(tail, replacement));
-          return new Tuple(newcomps);
+          Term tmp = _components.get(index-1);
+          _components.set(index - 1, tmp.replaceSubterm(tail, replacement));
+          Term ret = new Tuple(_components);
+          _components.set(index - 1, tmp);
+          return ret;
         }
       default:
-        throw new IndexingException("Tuple", "replaceSubterm", toString(), pos.toString());
+        throw new InvalidPositionException(this, pos, "replacing subterm of tuple");
     }
   }
 
   /**
-   * Substitutes the tuple by substituting all its components and wrapping the results in a
-   * tuple again.
+   * Refreshes all binders in the Tuple, while simultaneously renaming all binders in the
+   * given renaming to the corresponding mapped renaming.
    */
-  @Override
-  public Term substitute(Substitution gamma) {
-    return new Tuple(_components.stream().map(t -> t.substitute(gamma)).toList());
-  }
-
-  /**
-   * This method either extends gamma so that <this term> gamma = other and returns null, or
-   * returns a string describing why other is not an instance of gamma.
-   * Whether null is returned, gamma is likely to be extended (although without overriding)
-   * by this function.
-   */
-  @Override
-  public String match(Term other, Substitution gamma) {
-    if (other == null) throw new NullPointerException("Argument term in Application::match");
-    if (!other.isTuple()) {
-      return other.toString() + " does not instantiate " + toString() + " (not a tuple term).";
+  public Term renameAndRefreshBinders(Map<Variable,Variable> renaming) {
+    ArrayList<Term> parts = new ArrayList<Term>(_components);
+    boolean changed = false;
+    for (int i = 0; i < parts.size(); i++) {
+      Term other = parts.get(i).renameAndRefreshBinders(renaming);
+      if (other != parts.get(i)) {
+        changed = true;
+        parts.set(i, other);
+      }
     }
-    if (_components.size() != other.numberTupleArguments()) {
-      return other.toString() + " does not instantiate " + this.toString() + " (mismatch on the " +
-        "tuple sizes).";
-    }
-    for (int i = 0; i < _components.size(); i++) {
-      String warning = _components.get(i).match(other.queryTupleArgument(i+1), gamma);
-      if (warning != null) return warning;
-    }
-    return null;
+    if (!changed) return this;
+    return new Tuple(parts);
   }
 
   /** Determines the =_α^{μ,ξ,k} relation as described in the documentation. */

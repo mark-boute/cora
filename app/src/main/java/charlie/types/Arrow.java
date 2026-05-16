@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,9 +15,8 @@
 
 package charlie.types;
 
-import charlie.exceptions.NullStorageException;
-import charlie.exceptions.IndexingException;
 import java.util.Objects;
+import charlie.util.NullStorageException;
 
 public record Arrow(Type left, Type right) implements Type {
   public Arrow(Type left, Type right) {
@@ -51,6 +50,11 @@ public record Arrow(Type left, Type right) implements Type {
   }
 
   @Override
+  public boolean equals(Object other) {
+    return other instanceof Type t && equals(t);
+  }
+
+  @Override
   public int hashCode() {
     return Objects.hash(left, right);
   }
@@ -77,6 +81,7 @@ public record Arrow(Type left, Type right) implements Type {
   public Type subtype(int index) {
     if (index == 1) return this.left;
     if (index == 2) return this.right;
-    throw new IndexingException("Arrow", "subtype", index, 1, 2);
+    throw new IndexOutOfBoundsException("Arrow::subtype given " + index + " (expected 1-2).");
   }
 }
+

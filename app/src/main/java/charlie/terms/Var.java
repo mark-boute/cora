@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2019--2024 Cynthia Kop
+ Copyright 2019--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -16,9 +16,10 @@
 package charlie.terms;
 
 import java.util.Map;
-import charlie.exceptions.IndexingException;
-import charlie.exceptions.NullStorageException;
+import charlie.util.NullStorageException;
 import charlie.types.Type;
+import charlie.terms.replaceable.Replaceable;
+import charlie.terms.replaceable.ReplaceableList;
 
 /**
  * Non-binder variables are both used as parts of constraints, as generic expressions in terms, and
@@ -32,7 +33,7 @@ import charlie.types.Type;
  *
  * A non-binder variable is also a meta-variable with arity 0.
  */
-class Var extends LeafTermInherit implements Variable, MetaVariable {
+final class Var extends LeafTermInherit implements Variable, MetaVariable {
   private static int COUNTER = 0;
   private final String _name;
   private final int _index;
@@ -50,7 +51,7 @@ class Var extends LeafTermInherit implements Variable, MetaVariable {
   /** Create a non-binder variable without a name; a name will be automatically generated. */
   Var(Type type) {
     super(type);
-    _name = "X{" + COUNTER + "}";
+    _name = "X";
     _index = COUNTER;
     COUNTER++;
     setVariables(new ReplaceableList(this));
@@ -92,8 +93,8 @@ class Var extends LeafTermInherit implements Variable, MetaVariable {
     return _index;
   }
 
-  public int queryReplaceableKind() {
-    return Replaceable.KIND_BASEVAR;
+  public Kind queryReplaceableKind() {
+    return Replaceable.Kind.BASEVAR;
   }
 
   /** @return the type of this variable */
@@ -101,9 +102,9 @@ class Var extends LeafTermInherit implements Variable, MetaVariable {
     return queryType();
   }
 
-  /** @throws IndexingException, since there are no arguments */
+  /** @throws IndexOutOfBoundsException, since there are no arguments */
   public Type queryInputType(int index) {
-    throw new IndexingException("Var", "queryInputType", index);
+    throw new IndexOutOfBoundsException("Var::queryInputType(" + index + ") called");
   }
 
   /** @return this */
@@ -116,36 +117,8 @@ class Var extends LeafTermInherit implements Variable, MetaVariable {
     return this;
   }
 
-  /** @return gamma(x) if the current variable is x and x in dom(gamma), otherwise just x */
-  public Term substitute(Substitution gamma) {
-    if (gamma == null) throw new NullPointerException("Substitution in Var::substitute");
-    return gamma.getReplacement(this);
-  }
-
-  /** 
-   * This method updates gamma by adding the extension from x to the given other term, if x is not
-   * yet mapped to anything.
-   * If this works, then null is returned.
-   * If x is already mapped to the given other term, then nothing is done but null is returned.
-   * If x is mapped to a different term, then an explanation of the match failure is returned.
-   * If other or gamma is null, then a NullPointerException is thrown instead.
-   */
-  public String match(Term other, Substitution gamma) {
-    if (other == null) throw new NullPointerException("Matched term in Var::match");
-    if (gamma == null) throw new NullPointerException("Substitution in Var::match");
-
-    Term previous = gamma.get(this);
-    
-    if (previous == null) {
-      if (!other.queryType().equals(queryType())) {
-        return "Variable " + _name + " has a different type from " + other.toString() + ".";
-      }
-      gamma.extend(this, other);
-      return null;
-    }   
-    else if (previous.equals(other)) return null;
-    else return "Variable " + _name + " mapped both to " + previous.toString() + " and to " +
-      other.toString() + ".";
+  public Term makeTerm() {
+    return this;
   }
 
   /** Two variables are equal if and only if they are the same object. */
@@ -158,6 +131,11 @@ class Var extends LeafTermInherit implements Variable, MetaVariable {
     return other == this;
   }
 
+  /** This function replaces binders, so doesn't do anything with a non-binder variable! */
+  public Var renameAndRefreshBinders(Map<Variable,Variable> renaming) {
+    return this;
+  }
+
   /** Alpha-equality of a non-binder variable to another variable holds iff they are the same. */
   public boolean alphaEquals(Term term, Map<Variable,Integer> mu, Map<Variable,Integer> xi, int k) {
     return term.isVariable() && equals(term.queryVariable());
@@ -166,7 +144,7 @@ class Var extends LeafTermInherit implements Variable, MetaVariable {
   /** Implements a total ordering on replaceables using the kind, type and index. */
   public int compareTo(Replaceable other) {
     if (other == this) return 0;    // shortcut
-    int d = other.queryReplaceableKind() - queryReplaceableKind();
+    int d = other.queryReplaceableKind().compareTo(queryReplaceableKind());
     if (d != 0) return d;
     if (_index < other.queryIndex()) return -1; 
     if (_index > other.queryIndex()) return 1;

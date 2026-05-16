@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2024 Cynthia Kop
+ Copyright 2024--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -21,9 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.ArrayList;
 import java.util.TreeSet;
 
-import charlie.exceptions.IllegalRuleException;
-import charlie.exceptions.IllegalSymbolException;
-import charlie.exceptions.NullStorageException;
+import charlie.util.NullStorageException;
 import charlie.types.Type;
 import charlie.types.TypeFactory;
 import charlie.parser.CoraParser;
@@ -122,11 +120,11 @@ public class TrsFactoryTrsCreationTest {
     Variable x = TermFactory.createVar("x");
     rules.add(TrsFactory.createRule(TermFactory.createApp(f, x, a), x));
 
-    assertThrows(charlie.exceptions.IllegalSymbolException.class,
+    assertThrows(IllegalSymbolException.class,
       () -> TrsFactory.createTrs(new Alphabet(symbols), rules, TrsFactory.MSTRS));
 
     symbols.set(symbols.size()-1, TermFactory.createConstant("i", type("(|a , b|) → a")));
-    assertThrows(charlie.exceptions.IllegalSymbolException.class,
+    assertThrows(IllegalSymbolException.class,
       () -> TrsFactory.createTrs(new Alphabet(symbols), rules, TrsFactory.CFS));
   }
 

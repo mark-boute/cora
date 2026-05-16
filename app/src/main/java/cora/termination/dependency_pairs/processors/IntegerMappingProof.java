@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2024 Cynthia Kop
+ Copyright 2024--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -21,7 +21,9 @@ import java.util.Set;
 import java.util.Map;
 
 import charlie.util.Pair;
+import charlie.terms.replaceable.Renaming;
 import charlie.terms.*;
+import charlie.substitution.MutableSubstitution;
 import cora.io.OutputModule;
 import cora.termination.dependency_pairs.DP;
 import cora.termination.dependency_pairs.Problem;
@@ -88,12 +90,12 @@ class IntegerMappingProof extends ProcessorProofObject {
    * this returns t[x_1^f:=s1,...,x_n^f:=sn].
    */
   private Term instantiateCandidate(Term candidate, Term term) {
-    Substitution subst = TermFactory.createEmptySubstitution();
+    MutableSubstitution subst = new MutableSubstitution();
     FunctionSymbol f = term.queryRoot();
     for (int varL = 0; varL < f.queryArity(); varL ++) {
       subst.extend(_argvars.get(f).get(varL), term.queryArgument(varL + 1));
     }
-    return candidate.substitute(subst);
+    return subst.substitute(candidate);
   }
 
   /** Helper function for justify: prints which DPs are oriented (and why). */
@@ -104,8 +106,7 @@ class IntegerMappingProof extends ProcessorProofObject {
       DP dp = originalDPs.get(index);
       Term left = instantiateCandidate(_intp.get(dp.lhs().queryRoot()), dp.lhs());
       Term right = instantiateCandidate(_intp.get(dp.rhs().queryRoot()), dp.rhs());
-      Renaming renaming =
-        module.queryTermPrinter().generateUniqueNaming(left, right, dp.constraint());
+      Renaming renaming = module.generateUniqueNaming(left, right, dp.constraint());
       boolean oriented = _oriented.contains(index);
       module.nextColumn("(" + (index+1) + ")");
       module.nextColumn("%a", new Pair<Term,Renaming>(dp.constraint(), renaming));

@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2024 Cynthia Kop
+ Copyright 2024-2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,19 +15,18 @@
 
 package cora.termination.dependency_pairs.processors;
 
+import charlie.util.FixedList;
 import charlie.terms.FunctionSymbol;
 import charlie.trs.Rule;
 import charlie.trs.TRS;
 import charlie.trs.TrsFactory;
 import charlie.reader.CoraInputReader;
 import cora.io.OutputModule;
-import cora.io.DefaultOutputModule;
 import cora.termination.dependency_pairs.DPGenerator;
 import cora.termination.dependency_pairs.Problem;
 import cora.termination.dependency_pairs.DP;
 
 import java.util.Set;
-import java.util.List;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
@@ -36,7 +35,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class UsableRulesTest {
   private String getMessage(TRS trs, ProcessorProofObject po) {
-    OutputModule module = DefaultOutputModule.createUnicodeModule(trs);
+    OutputModule module = OutputModule.createUnicodeModule(trs);
     po.justify(module);
     return module.toString();
   }
@@ -70,7 +69,7 @@ class UsableRulesTest {
     ProcessorProofObject po = proc.processDPP(prob);
     assertTrue(po.applicable());
     assertTrue(po.queryResults().size() == 1);
-    List<Rule> result = po.queryOutput().getRuleList();
+    FixedList<Rule> result = po.queryOutput().getRuleList();
     assertTrue(result.size() == 2);
     assertTrue(result.get(0).toString().equals("minus(x, y) → x - y | x ≥ y"));
     assertTrue(result.get(1).toString().equals("minus(x, y) → 0 | x < y"));

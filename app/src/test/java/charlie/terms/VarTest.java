@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2019--2024 Cynthia Kop
+ Copyright 2019--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -19,11 +19,12 @@ import java.util.List;
 import java.util.TreeMap;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
-import charlie.exceptions.*;
 import charlie.util.Pair;
+import charlie.util.NullStorageException;
 import charlie.types.Type;
 import charlie.types.TypeFactory;
 import charlie.terms.position.*;
+import charlie.terms.replaceable.ReplaceableList;
 
 public class VarTest extends TermTestFoundation {
   @Test
@@ -41,35 +42,13 @@ public class VarTest extends TermTestFoundation {
   @Test
   public void testSubtermRequest() {
     Variable x = new Var("x", baseType("o"));
-    assertThrows(IndexingException.class, () -> x.queryArgument(1));
-  }
-
-  @Test
-  public void testNullSubstitution() {
-    Term t = new Var("x", baseType("Int"));
-    assertThrows(NullPointerException.class, () -> t.substitute(null));
-  }
-
-  @Test
-  public void testNullMatch1() {
-    Term t = new Var("x", baseType("Int"));
-    assertThrows(NullPointerException.class,
-      () -> t.match(constantTerm("37", baseType("Int")), null));
-  }
-
-  @Test
-  public void testNullMatch2() {
-    Term t = new Var("x", baseType("Int"));
-    Substitution subst = new Subst();
-    assertThrows(NullPointerException.class, () -> t.match(null, subst));
+    assertThrows(IndexOutOfBoundsException.class, () -> x.queryArgument(1));
   }
 
   @Test
   public void testBaseVariableApplication() {
     Term t = new Var("x", baseType("Int"));
-    assertThrows(ArityException.class, () -> t.apply(t));
-  }
-
+    assertThrows(TypingException.class, () -> t.apply(t)); }
   @Test
   public void testIllegalTypeApplication() {
     Term t = new Var("x", arrowType("a", "b"));
@@ -96,7 +75,10 @@ public class VarTest extends TermTestFoundation {
     assertTrue(s.isApplicative());
     assertTrue(s.isClosed());
     assertFalse(s.isGround());
-    assertTrue(s.refreshBinders() == s);
+    TreeMap<Variable,Variable> map = new TreeMap<Variable,Variable>();
+    assertTrue(s.renameAndRefreshBinders(map) == s);
+    map.put(x, new Var("y", baseType("o")));
+    assertTrue(s.renameAndRefreshBinders(map) == s);
     assertFalse(x.isBinderVariable());
     Variable z = new Var("z", arrowType("o", "o"));
     assertFalse(z.isFirstOrder());
@@ -195,14 +177,14 @@ public class VarTest extends TermTestFoundation {
   public void testSubtermBad() {
     Term s = new Var("x", baseType("o"));
     Position p = new ArgumentPos(1, Position.empty);
-    assertThrows(IndexingException.class, () -> s.querySubterm(p));
+    assertThrows(InvalidPositionException.class, () -> s.querySubterm(p));
   }
 
   @Test
   public void testHeadSubtermBad() {
     Term s = new Var("x", baseType("o"));
     Position p = new ArgumentPos(1, Position.empty);
-    assertThrows(IndexingException.class, () -> s.querySubterm(p));
+    assertThrows(InvalidPositionException.class, () -> s.querySubterm(p));
   }
 
   @Test
@@ -224,76 +206,14 @@ public class VarTest extends TermTestFoundation {
   public void testSubtermReplacementBad() {
     Term s = new Var("x", baseType("o"));
     Position p = new MetaPos(1, Position.empty);
-    assertThrows(IndexingException.class, () -> s.replaceSubterm(p, twoArgVarTerm()));
+    assertThrows(InvalidPositionException.class, () -> s.replaceSubterm(p, twoArgVarTerm()));
   }
 
   @Test
   public void testHeadSubtermReplacementBad() {
     Term s = new Var("x", baseType("o"));
     Position p = new FinalPos(1);
-    assertThrows(IndexingException.class, () -> s.replaceSubterm(p, twoArgVarTerm()));
-  }
-
-  @Test
-  public void testSubstituting() {
-    Variable x = new Var("x", baseType("Int"));
-    Variable y = new Var("y", baseType("Int"));
-    Variable z = new Var("z", baseType("Bool"));
-    Term xterm = constantTerm("37", baseType("Int"));
-    Substitution gamma = new Subst(x, xterm);
-    gamma.extend(y, x); 
-    assertTrue(x.substitute(gamma).equals(xterm));
-    assertTrue(y.substitute(gamma).equals(x));
-    assertTrue(z.substitute(gamma).equals(z));
-  }
-
-  @Test
-  public void testMatchingNoMappingBinder() {
-    Variable x = new Var("x", baseType("a"));
-    Term t = twoArgVarTerm();
-    Subst gamma = new Subst();
-    assertTrue(x.match(t, gamma) == null);
-    assertTrue(gamma.get(x).equals(t));
-    assertTrue(gamma.domain().size() == 1);
-  }
-
-  @Test
-  public void testMatchingNoMappingNonBinder() {
-    Variable x = new Var("x", baseType("a"));
-    Term t = twoArgVarTerm();
-    Subst gamma = new Subst();
-    assertTrue(x.match(t, gamma) == null);
-    assertTrue(gamma.get(x).equals(t));
-    assertTrue(gamma.domain().size() == 1);
-  }
-
-  @Test
-  public void testMatchingExistingMapping() {
-    Variable x = new Var("x", baseType("a"));
-    Term t = twoArgVarTerm();
-    Subst gamma = new Subst(x, t);
-    assertTrue(x.match(t, gamma) == null);
-    assertTrue(gamma.get(x).equals(t));
-    assertTrue(gamma.domain().size() == 1);
-  }
-
-  @Test
-  public void testMatchingConflictingMapping() {
-    Variable x = new Var("x", baseType("a"));
-    Term t = twoArgVarTerm();
-    Term q = new Var("y", baseType("a"));
-    Subst gamma = new Subst(x, q);
-    assertTrue(x.match(t, gamma) != null);
-    assertTrue(gamma.get(x).equals(q));
-    assertTrue(gamma.domain().size() == 1);
-  }
-
-  @Test
-  public void testMatchingBadType() {
-    Variable x = new Var("x", baseType("a"));
-    Term t = constantTerm("u", baseType("b"));
-    Subst gamma = new Subst();
-    assertTrue(x.match(t, gamma) != null);
+    assertThrows(InvalidPositionException.class, () -> s.replaceSubterm(p, twoArgVarTerm()));
   }
 }
 

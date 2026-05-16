@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -16,10 +16,10 @@
 package charlie.terms;
 
 import java.util.ArrayList;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
-import charlie.exceptions.*;
 import charlie.types.TypeFactory;
 import charlie.terms.position.*;
 
@@ -66,7 +66,7 @@ public class ValueTest extends TermTestFoundation {
     assertTrue(v.toString().equals("-37"));
     assertTrue(b.toString().equals("true"));
     assertTrue(s.toString().equals("\"Hello\\nworld\""));
-    assertTrue(b.refreshBinders() == b);
+    assertTrue(b.renameAndRefreshBinders(new TreeMap<Variable,Variable>()) == b);
     assertTrue(v.apply(new ArrayList<Term>()) == v);
   }
 
@@ -82,7 +82,7 @@ public class ValueTest extends TermTestFoundation {
   @Test
   public void testValueApply() {
     Value v = new IntegerValue(13);
-    assertThrows(ArityException.class, () -> v.apply(new Constant("a", baseType("o"))));
+    assertThrows(TypingException.class, () -> v.apply(new Constant("a", baseType("o"))));
   }
 
   @Test
@@ -136,19 +136,20 @@ public class ValueTest extends TermTestFoundation {
   @Test
   public void testArgumentPositionRequest() {
     Term v = new StringValue("333");
-    assertThrows(IndexingException.class, () -> v.querySubterm(new ArgumentPos(1, Position.empty)));
+    assertThrows(InvalidPositionException.class, () ->
+      v.querySubterm(new ArgumentPos(1, Position.empty)));
   }
 
   @Test
   public void testHeadPositionRequest() {
     Term v = new IntegerValue(31);
-    assertThrows(IndexingException.class, () -> v.querySubterm(new FinalPos(1)));
+    assertThrows(InvalidPositionException.class, () -> v.querySubterm(new FinalPos(1)));
   }
 
   @Test
   public void testBadPositionReplacement() {
     Term v = new BooleanValue(true);
-    assertThrows(IndexingException.class, () ->
+    assertThrows(InvalidPositionException.class, () ->
       v.replaceSubterm(new ArgumentPos(1, Position.empty), new Constant("a", baseType("a"))));
   }
 }

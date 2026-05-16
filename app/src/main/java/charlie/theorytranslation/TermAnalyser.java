@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -17,10 +17,14 @@ package charlie.theorytranslation;
 
 import java.util.Random;
 
-import charlie.exceptions.UnsupportedTheoryException;
 import charlie.types.Type;
 import charlie.types.TypeFactory;
-import charlie.terms.*;
+import charlie.terms.Term;
+import charlie.terms.Variable;
+import charlie.terms.Value;
+import charlie.terms.TheoryFactory;
+import charlie.substitution.Substitution;
+import charlie.substitution.MutableSubstitution;
 import charlie.smt.*;
 import charlie.smt.SmtSolver.Answer;
 
@@ -30,8 +34,8 @@ import charlie.smt.SmtSolver.Answer;
 public class TermAnalyser {
   private static Random _rnd = new Random();
 
-  public sealed interface Result {
-    public record YES(Substitution subts) implements Result {}
+  public sealed interface Result permits Result.YES, Result.NO, Result.MAYBE {
+    public record YES(Substitution subst) implements Result {}
     public record NO() implements Result {}
     public record MAYBE(String reason) implements Result {}
   }
@@ -42,8 +46,8 @@ public class TermAnalyser {
     if (type.equals(TypeFactory.intSort)) return TheoryFactory.createValue(r);
     if (type.equals(TypeFactory.boolSort)) return TheoryFactory.createValue((r % 2) == 0);
     if (type.equals(TypeFactory.stringSort)) return TheoryFactory.createValue("{" + r + "}");
-    throw new UnsupportedTheoryException("variable", "Asked to choose random value of type " +
-      type.toString() + ", which is not a supported theory sort.");
+    throw new UnsupportedTheoryException("Unsupported theory: I cannot choose a random value of " +
+      "type ", type, " because this theory sort is not yet supported by the SMT module.");
   }
 
   /** Given a ground theory term, this fully evaluates it to a Value. */
@@ -58,8 +62,8 @@ public class TermAnalyser {
       return TheoryFactory.createValue(c.evaluate());
     }
     if (t.isValue()) return t.toValue();
-    throw new UnsupportedTheoryException(t.toString(), "Type " + t.queryType().toString() + " is " +
-      "not a supported theory sort.");
+    throw new UnsupportedTheoryException("Failed to translate ", t, " to SMT: its type (",
+      t.queryType(), ") is not a supported theory sort.");
   }
 
   /**
@@ -86,7 +90,7 @@ public class TermAnalyser {
     translator.require(t);
     return switch (solver.checkSatisfiability(translator.queryProblem())) {
       case Answer.YES(Valuation val) -> {
-          Substitution ret = TermFactory.createEmptySubstitution();
+          MutableSubstitution ret = new MutableSubstitution();
           for (Variable x : t.vars()) {
             if (x.queryType().equals(TypeFactory.boolSort)) {
               BVar bvar = translator.getBVar(x);

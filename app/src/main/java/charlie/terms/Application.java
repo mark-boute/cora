@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,23 +15,24 @@
 
 package charlie.terms;
 
-import com.google.common.collect.ImmutableList;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Stream;
-import charlie.exceptions.*;
+import charlie.util.NullStorageException;
 import charlie.util.Pair;
 import charlie.types.Arrow;
 import charlie.types.Type;
 import charlie.types.TypeFactory;
 import charlie.terms.position.*;
+import charlie.terms.replaceable.ReplaceableList;
 
 /** An Application is a term of the form h(s1,...,sn) where h is not an application. */
 class Application extends TermInherit {
   public Term _head;
-  public ImmutableList<Term> _args;
+  public ArrayList<Term> _args;
   public Type _outputType;
 
   //  Construction Phase ------------------------------------------------------
@@ -46,12 +47,11 @@ class Application extends TermInherit {
     ReplaceableList frees = calculateFreeReplaceablesForSubterms(args, _head.freeReplaceables());
     ReplaceableList bounds = _head.boundVars();
     if (bounds.size() > 0 && !bounds.getOverlap(frees).isEmpty()) {
-      _head = _head.refreshBinders();
+      _head = _head.renameAndRefreshBinders(new TreeMap<Variable,Variable>());
       bounds = _head.boundVars();
     }
-    ImmutableList.Builder<Term> builder = ImmutableList.<Term>builder();
-    bounds = calculateBoundVariablesAndRefreshSubs(args, bounds, frees, builder);
-    _args = builder.build();
+    _args = new ArrayList<Term>();
+    bounds = calculateBoundVariablesAndRefreshSubs(args, bounds, frees, _args);
     setVariables(frees, bounds);
   }
 
@@ -76,15 +76,16 @@ class Application extends TermInherit {
       switch (type) {
         case Arrow(Type inp, Type out):
           if (!inp.equals(arg.queryType())) {
-            throw new TypingException("Application", "constructor", "arg " + (i+1) + " of " +
-              head.toString(), arg.queryType() == null ? "null" : arg.queryType().toString(),
-              inp.toString());
+            throw new TypingException("Could not construct application headed by ", head, ": " +
+              "argument " + (i+1) + " of the head has type ", inp, " while the given argument to " +
+              "be applied, ", arg, ", has type ", arg.queryType(), ".");
           }
           type = out;
           break;
         default:
-          throw new ArityException("Application", "constructor", "head term " + head.toString() +
-            " has maximum arity " + i + " and is given " + args.size() + " arguments.");
+          throw new TypingException("Could not construct application headed by ", head, " with " +
+            args.size() + " arguments: the head has type " + head.queryType(), ", which only " +
+            "permits " + i + " arguments!");
       }
     }
 
@@ -92,7 +93,9 @@ class Application extends TermInherit {
     _head = head;
     if (_head.isApplication()) {
       _head = head.queryHead();
-      args = Stream.concat(head.queryArguments().stream(), args.stream()).toList();
+      ArrayList<Term> newArgs = head.queryArguments();
+      newArgs.addAll(args);
+      args = newArgs;
     }
     setupReplaceables(args);
   }
@@ -188,18 +191,19 @@ class Application extends TermInherit {
   }
 
   /** Returns the list of all arguments, so [s1,...,sn] for h(s1,...,sn). */
-  public ImmutableList<Term> queryArguments() {
-    return _args;
+  public ArrayList<Term> queryArguments() {
+    return new ArrayList<Term>(_args);
   }
 
-  public ImmutableList<Term> queryMetaArguments() {
+  public ArrayList<Term> queryMetaArguments() {
     return _head.queryMetaArguments();
   }
 
   /** For a term head(s1,...,sn), this returns si if 1 <= i <= n, and throws an error otherwise. */
   public Term queryArgument(int i) {
     if (i <= 0 || i > _args.size()) {
-      throw new IndexingException("Application", "queryArgument", i, 1, _args.size());
+      throw new IndexOutOfBoundsException("Application::queryArgument(" + i + ") called on " +
+        "application with " + _args.size() + " arguments. (" + toString() + ")");
     }
     return _args.get(i-1);
   }
@@ -212,7 +216,8 @@ class Application extends TermInherit {
   /** For a term h(s1,...,sn) this returns h(s1,...,si). */
   public Term queryImmediateHeadSubterm(int i) {
     if (i < 0 || i > _args.size()) {
-      throw new IndexingException("Application", "queryImmediateHeadSubterm", i, 0, _args.size());
+      throw new IndexOutOfBoundsException("Application::queryImmediateHeadSubterm(" + i + ") " +
+        "called on application with " + _args.size() + " arguments (" + toString() + ")");
     }   
     if (i == 0) return _head;
     return new Application(_head, _args.subList(0, i));
@@ -302,12 +307,14 @@ class Application extends TermInherit {
     switch (pos) {
       case FinalPos(int k):
         if (k > _args.size()) {
-          throw new IndexingException("Application", "querySubterm", toString(), pos.toString());
+          throw new InvalidPositionException(this, pos,
+            "querying subterm with excessive chop count in application");
         }
         return _head.apply(_args.subList(0, _args.size() - k));
       case ArgumentPos(int index, Position tail):
         if (index > _args.size()) {
-          throw new IndexingException("Application", "querySubterm", toString(), pos.toString());
+          throw new InvalidPositionException(this, pos,
+            "querying subterm in non-existing argument of application");
         }
         return _args.get(index-1).querySubterm(tail);
       default:
@@ -317,30 +324,37 @@ class Application extends TermInherit {
 
   /**
    * @return a copy of the term with the subterm at the given (non-empty) position replaced by
-   * replacement, if such a position exists; otherwise throws an IndexingException.
+   * replacement, if such a position exists; otherwise throws an InvalidPositionException.
    */
   public Term replaceSubtermMain(Position pos, Term replacement) {
     switch (pos) {
       case FinalPos(int k):
         if (k > _args.size()) {
-          throw new IndexingException("Application", "replaceSubterm", toString(), pos.toString());
+          throw new InvalidPositionException(this, pos,
+            "replacing subterm with excessive chop count in application");
         }
         Type type = queryType();
         for (int i = 1; i <= k; i++) {
           type = TypeFactory.createArrow(_args.get(_args.size()-i).queryType(), type);
         }
         if (!type.equals(replacement.queryType())) {
-          throw new TypingException("Application", "replaceSubterm", "replacement term " +
-            replacement.toString(), replacement.queryType().toString(), type.toString());
+          Term t = k == 0 ? this : k == _args.size() ? _head
+                          : new Application(_head, _args.subList(0, _args.size()-k));
+          throw new TypingException("Typing error when replacing a subterm: I cannot replace ", t,
+            " by ", replacement, " since the former has type ", type, " while the latter has type ",
+            replacement.queryType(), ".");
         }
         return replacement.apply(_args.subList(_args.size()-k, _args.size()));
       case ArgumentPos(int index, Position tail):
         if (index > _args.size()) {
-          throw new IndexingException("Application", "replaceSubterm", toString(), pos.toString());
+          throw new InvalidPositionException(this, pos,
+            "replacing subterm in non-existing argument of application");
         }
-        ArrayList<Term> lst = new ArrayList<Term>(_args);
-        lst.set(index-1, _args.get(index-1).replaceSubterm(tail, replacement));
-        return new Application(_head, lst);
+        Term tmp = _args.get(index-1);
+        _args.set(index-1, tmp.replaceSubterm(tail, replacement));
+        Term ret = new Application(_head, _args);
+        _args.set(index-1, tmp);
+        return ret;
       default:
         Term newhead = _head.replaceSubterm(pos, replacement);
         return new Application(newhead, _args);
@@ -348,48 +362,22 @@ class Application extends TermInherit {
   }
 
   /**
-   * This method replaces each variable x in the term by gamma(x) (or leaves x alone if x is not
-   * in the domain of gamma); the result is returned.
+   * This method yields a copy with all binders in the renaming's mapping renamed, and the
+   * binders in lambdas below this term refreshed.
    */
-  public Term substitute(Substitution gamma) {
-    Term h = _head.substitute(gamma);
-    if (h == null) throw new NullStorageException("Application",
-      "Substituting " + _head.toString() + " results in null!");
-
-    List<Term> args = new ArrayList<Term>(_args);
+  public Term renameAndRefreshBinders(Map<Variable,Variable> renaming) {
+    Term head = _head.renameAndRefreshBinders(renaming);
+    ArrayList<Term> args = new ArrayList<Term>(_args);
+    boolean changed = head != _head;
     for (int i = 0; i < args.size(); i++) {
-      Term t = args.get(i).substitute(gamma);
-      if (t == null) throw new NullStorageException("Application",
-        "Substituting " + args.get(i).toString() + " results in null!");
-      args.set(i, t);
-    }
-
-    return new Application(h, args);
-  }
-
-  /**
-   * This method either extends gamma so that <this term> gamma = other and returns null, or
-   * returns a string describing why other is not an instance of gamma.
-   * Whether null is returned, gamma is likely to be extended (although without overriding)
-   * by this function.
-   */
-  public String match(Term other, Substitution gamma) {
-    if (other == null) throw new NullPointerException("Argument term in Application::match");
-    if (!other.isApplication()) {
-      return other.toString() + " does not instantiate " + toString() + " (not an application).";
+      Term other = args.get(i).renameAndRefreshBinders(renaming);
+      if (other != args.get(i)) {
+        changed = true;
+        args.set(i, other);
+      }   
     }   
-    if (other.numberArguments() < _args.size()) {
-      return other.toString() + " does not instantiate " + toString() + " (too few arguments).";
-    }   
-    int i = other.numberArguments();
-    int j = numberArguments();
-    for (; j > 0; i--, j--) {
-      Term mysub = queryArgument(j);
-      Term hissub = other.queryArgument(i);
-      String warning = mysub.match(hissub, gamma);
-      if (warning != null) return warning;
-    }   
-    return _head.match(other.queryImmediateHeadSubterm(i), gamma);
+    if (!changed) return this;
+    return new Application(head, args);
   }
 
   /** This method verifies equality to another Term. */

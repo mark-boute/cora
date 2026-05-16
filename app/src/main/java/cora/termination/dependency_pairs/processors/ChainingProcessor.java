@@ -1,13 +1,5 @@
 package cora.termination.dependency_pairs.processors;
 
-import charlie.util.Pair;
-import charlie.terms.*;
-import charlie.trs.TRS;
-import cora.io.OutputModule;
-import cora.config.Settings;
-import cora.termination.dependency_pairs.DP;
-import cora.termination.dependency_pairs.Problem;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -20,6 +12,19 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
+
+import charlie.util.Pair;
+import charlie.terms.replaceable.Replaceable;
+import charlie.terms.replaceable.Renaming;
+import charlie.terms.replaceable.MutableRenaming;
+import charlie.terms.*;
+import charlie.substitution.MutableSubstitution;
+import charlie.substitution.Matcher;
+import charlie.trs.TRS;
+import cora.io.OutputModule;
+import cora.config.Settings;
+import cora.termination.dependency_pairs.DP;
+import cora.termination.dependency_pairs.Problem;
 
 /**
  * Chains consecutive DPs in the DP graph into new DPs that have the same
@@ -207,7 +212,7 @@ public class ChainingProcessor implements Processor {
     Term dp1Rhs = dp1.rhs();
     Term dp2Lhs = dp2.lhs();
 
-    Substitution matcher = dp2Lhs.match(dp1Rhs);
+    MutableSubstitution matcher = Matcher.match(dp2Lhs, dp1Rhs);
     if (matcher == null) {
       return Optional.empty();
     }
@@ -222,8 +227,8 @@ public class ChainingProcessor implements Processor {
         return Optional.empty();
       }
     }
-    Term resultRhs = dp2.rhs().substitute(matcher);
-    Term dp2ConstraintSubst = dp2.constraint().substitute(matcher);
+    Term resultRhs = matcher.substitute(dp2.rhs());
+    Term dp2ConstraintSubst = matcher.substitute(dp2.constraint());
     Term resultConstraint = TermFactory.createApp(TheoryFactory.andSymbol,
       dp1.constraint(), dp2ConstraintSubst);
     Set<Variable> resultTheoryVars = new LinkedHashSet<>(dp1.lvars());
@@ -260,17 +265,19 @@ public class ChainingProcessor implements Processor {
      * Gets a Renaming that allows the given 3 DPs to be printed at the same time (so with
      * their variables consistently named).
      */
-    private Renaming getRenaming(TermPrinter printer, DP dp1, DP dp2, DP dp3) {
-      LinkedList<Term> vars = new LinkedList<Term>();
-      for (Variable x : dp1.getAllVariables()) vars.add(x);
-      Renaming ret = printer.generateUniqueNaming(vars);
+    private Renaming getRenaming(OutputModule module, DP dp1, DP dp2, DP dp3) {
+      Set<Variable> allvars = dp1.getAllVariables();
+      Term[] vars = new Term[allvars.size()];
+      int i = 0;
+      for (Variable x : dp1.getAllVariables()) vars[i++] = x;
+      MutableRenaming ret = module.generateUniqueNaming(vars);
       for (Variable x : dp2.getAllVariables()) extend(ret, x);
       for (Variable x : dp3.getAllVariables()) extend(ret, x);
       return ret;
     }
 
     /** Helper function for getRenaming: extends the given renaming with a name for x */
-    private void extend(Renaming renaming, Variable x) {
+    private void extend(MutableRenaming renaming, Variable x) {
       if (renaming.getName(x) != null) return;
       String name = x.queryName();
       while (!renaming.isAvailable(name)) name += "'";
@@ -283,13 +290,12 @@ public class ChainingProcessor implements Processor {
         module.println("No suitable chaining could be found.");
         return;
       }
-      TermPrinter printer = module.queryTermPrinter();
       module.println("We chain DPs according to the following mapping:");
       module.println();
       module.startTable();
       _chainedToOriginalDPs.forEach(
         (c, p) -> {
-          Renaming renaming = getRenaming(printer, c, p.fst(), p.snd());
+          Renaming renaming = getRenaming(module, c, p.fst(), p.snd());
           module.nextColumn("%a", new Pair<DP,Renaming>(c, renaming));
           module.nextColumn(" is obtained by chaining ");
           module.nextColumn("%a", new Pair<DP,Renaming>(p.fst(), renaming));

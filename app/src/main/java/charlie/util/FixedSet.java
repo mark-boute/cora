@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2024 Cynthia Kop
+ Copyright 2024--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -14,8 +14,6 @@
  *************************************************************************************************/
 
 package charlie.util;
-
-import charlie.exceptions.NullStorageException;
 
 import java.lang.Iterable;
 import java.util.HashSet;
@@ -37,7 +35,7 @@ public class FixedSet<T> implements Iterable<T> {
    * Private constructor, because we should only be created through the builder or the
    * dedicated static construction functions.
    */
-  FixedSet(Set<T> set) {
+  private FixedSet(Set<T> set) {
     _myset = set;
   }
 
@@ -83,6 +81,13 @@ public class FixedSet<T> implements Iterable<T> {
   public Stream<T> parallelStream() { return _myset.parallelStream(); }
   public int size() { return _myset.size(); }
   public Stream<T> stream() { return _myset.stream(); }
+  public String toString() { return _myset.toString(); }
+  
+  public FixedSet<T> add(T element) {
+    Set<T> ret = _myset instanceof TreeSet ? new TreeSet<T>(_myset) : new HashSet<T>(_myset);
+    ret.add(element);
+    return new FixedSet<T>(ret);
+  }
   
   private class ImmutableIterator<T> implements Iterator<T> {
     Iterator<T> _mine;

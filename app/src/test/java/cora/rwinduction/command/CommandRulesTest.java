@@ -1,0 +1,144 @@
+/**************************************************************************************************
+ Copyright 2024-2025 Cynthia Kop
+
+ Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ in compliance with the License.
+ You may obtain a copy of the License at
+
+ http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software distributed under the
+ License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+ express or implied.
+ See the License for the specific language governing permissions and limitations under the License.
+ *************************************************************************************************/
+
+package cora.rwinduction.command;
+
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+import java.util.Set;
+
+import charlie.util.FixedList;
+import charlie.terms.TheoryFactory;
+import charlie.parser.lib.ParsingStatus;
+import charlie.trs.TRS;
+import charlie.reader.CoraInputReader;
+import cora.io.OutputModule;
+import cora.rwinduction.engine.EquationContext;
+import cora.rwinduction.engine.PartialProof;
+import cora.rwinduction.parser.CommandParsingStatus;
+import cora.rwinduction.parser.EquationParser;
+
+class CommandRulesTest {
+  private TRS setupTRS() {
+    return CoraInputReader.readTrsFromString(
+      "return :: Int -> result\n" +
+      "error :: result\n" +
+      "sum1 :: Int -> result\n" +
+      "sum1(x) -> return(0) | x <= 0\n" +
+      "sum1(x) -> add(x,sum1(x-1)) | x > 0\n" +
+      "add :: Int -> result -> result\n" +
+      "add(x, return(y)) -> return(x+y)\n" +
+      "add(x, error) -> error\n" +
+      "sum2 :: Int -> result\n" +
+      "sum2(x) -> iter(x, 0, 0)\n" +
+      "iter :: Int -> Int -> Int -> result\n" +
+      "iter(x, i, z) -> return(z) | i > x\n" +
+      "iter(x, i, z) -> iter(x, i+1, z+i) | i <= x\n");
+  }
+
+  private boolean runCommand(OutputModule module, String str) {
+    CommandRules cmd = new CommandRules();
+    TRS trs = setupTRS();
+    EquationContext ec = EquationParser.parseEquationData("sum1(x) = sum2(x) | x ≥ 0", trs, 1);
+    PartialProof proof = new PartialProof(trs, FixedList.of(ec),
+                                          lst -> module.generateUniqueNaming(lst));
+    cmd.storeContext(proof, module);
+    CommandParsingStatus status = new CommandParsingStatus(str);
+    status.nextWord(); // :rules
+    return cmd.execute(status);
+  }
+
+  @Test
+  public void testPrintAll() {
+    OutputModule module = OutputModule.createUnitTestModule();
+    assertTrue(runCommand(module, ":rules"));
+    assertTrue(module.toString().equals(
+      "  R1: sum1(x) → return(0) | x ≤ 0\n" +
+      "  R2: sum1(x) → add(x, sum1(x - 1)) | x > 0\n" +
+      "  R3: add(x, return(y)) → return(x + y)\n" +
+      "  R4: add(x, error) → error\n" +
+      "  R5: sum2(x) → iter(x, 0, 0)\n" +
+      "  R6: iter(x, i, z) → return(z) | i > x\n" +
+      "  R7: iter(x, i, z) → iter(x, i + 1, z + i) | i ≤ x\n\n"));
+  }
+
+  @Test
+  public void testPrintConstructorSymbol() {
+    OutputModule module = OutputModule.createUnitTestModule();
+    assertTrue(runCommand(module, ":rules return"));
+    assertTrue(module.toString().equals("There are no rules with return as root symbol.\n\n"));
+  }
+
+  @Test
+  public void testPrintDefinedSymbol() {
+    OutputModule module = OutputModule.createUnitTestModule();
+    assertTrue(runCommand(module, ":rules iter"));
+    assertTrue(module.toString().equals(
+      "  R6: iter(x, i, z) → return(z) | i > x\n" +
+      "  R7: iter(x, i, z) → iter(x, i + 1, z + i) | i ≤ x\n\n"));
+  }
+
+  @Test
+  public void testPrintCalculationSymbol() {
+    OutputModule module = OutputModule.createUnitTestModule();
+    assertTrue(runCommand(module, ":rules [=_Bool]"));
+    assertTrue(module.toString().equals(
+      "There are no rules with [⇔] as root symbol.\n\n" +
+      "The calculation rule for this symbol is: x1 ⇔ x2 → z | z ⇔ (x1 ⇔ x2) .\n\n"));
+  }
+
+  @Test
+  public void testPrintCalculationSymbolWithSpaces() {
+    OutputModule module = OutputModule.createUnitTestModule();
+    assertTrue(runCommand(module, ":rules [ + ]"));
+    assertTrue(module.toString().equals(
+      "There are no rules with [+] as root symbol.\n\n" +
+      "The calculation rule for this symbol is: x1 + x2 → z | z = x1 + x2 .\n\n"));
+  }
+
+  @Test
+  public void testPrintCalculationSymbolWithoutBrackets() {
+    OutputModule module = OutputModule.createUnitTestModule();
+    assertTrue(runCommand(module, ":rules +"));
+    assertTrue(module.toString().equals(
+      "There are no rules with [+] as root symbol.\n\n" +
+      "The calculation rule for this symbol is: x1 + x2 → z | z = x1 + x2 .\n\n"));
+  }
+
+  @Test
+  public void testParseTwoArguments() {
+    OutputModule module = OutputModule.createUnitTestModule();
+    assertFalse(runCommand(module, ":rules sum1 +"));
+    assertTrue(module.toString().equals(
+      "Unexpected argument at position 13: :rules takes at most 1 argument.\n\n"));
+  }
+
+  @Test
+  public void testParseUnknownArgument() {
+    OutputModule module = OutputModule.createUnitTestModule();
+    assertFalse(runCommand(module, ":rules sum3"));
+    assertTrue(module.toString().equals("Parsing error at position 8: " +
+      "Undeclared symbol: sum3.  Type cannot easily be deduced from context.\n\n"));
+  }
+
+  @Test
+  public void testParseUnknownCalculation() {
+    OutputModule module = OutputModule.createUnitTestModule();
+    assertFalse(runCommand(module, ":rules [and]"));
+    assertTrue(module.toString().equals(
+      "Parsing error at position 9: Expected infix symbol but got IDENTIFIER (and)\n\n"));
+  }
+}
+

@@ -1,0 +1,373 @@
+/**************************************************************************************************
+ Copyright 2025 Cynthia Kop
+
+ Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ in compliance with the License.
+ You may obtain a copy of the License at
+
+ http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software distributed under the
+ License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+ express or implied.
+ See the License for the specific language governing permissions and limitations under the License.
+ *************************************************************************************************/
+
+package cora.rwinduction.engine.deduction;
+
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+import java.util.List;
+import java.util.Set;
+import java.util.Optional;
+
+import charlie.util.FixedList;
+import charlie.terms.position.PositionFormatException;
+import charlie.terms.position.Position;
+import charlie.terms.replaceable.Renaming;
+import charlie.terms.replaceable.MutableRenaming;
+import charlie.terms.*;
+import charlie.substitution.MutableSubstitution;
+import charlie.trs.TRS;
+import charlie.reader.CoraInputReader;
+import charlie.smt.SmtProblem;
+import charlie.smt.FixedAnswerValidityChecker;
+import cora.config.Settings;
+import cora.io.OutputModule;
+import cora.rwinduction.parser.EquationParser;
+import cora.rwinduction.engine.*;
+
+class DeductionHypothesisTest {
+  /* ========== SETUP ========== */
+
+  private TRS setupTRS() {
+    return CoraInputReader.readTrsFromString(
+      "sum1 :: Int -> Int\n" +
+      "sum1(x) -> 0 | x <= 0\n" +
+      "sum1(x) -> x + sum1(x-1) | x > 0\n" +
+      "sum2 :: Int -> Int\n" +
+      "sum2(x) -> iter(x, 0, 0)\n" +
+      "iter :: Int -> Int -> Int -> Int\n" +
+      "iter(x, i, z) -> z | i > x\n" +
+      "iter(x, i, z) -> iter(x, i+1, z+i) | i <= x\n");
+  }
+
+  private EquationContext readEquationContext(TRS trs, String leftgr, String lhs, String rhs,
+                                              String constraint, String rightgr) {
+    MutableRenaming renaming = new MutableRenaming(trs.queryFunctionSymbolNames());
+    Term lg = CoraInputReader.readTermAndUpdateNaming(leftgr, renaming, trs);
+    Term ls = CoraInputReader.readTermAndUpdateNaming(lhs, renaming, trs);
+    Term rs = CoraInputReader.readTermAndUpdateNaming(rhs, renaming, trs);
+    Term co = CoraInputReader.readTermAndUpdateNaming(constraint, renaming, trs);
+    Term rg = CoraInputReader.readTermAndUpdateNaming(rightgr, renaming, trs);
+    return new EquationContext(lg, new Equation(ls, rs, co), rg, 19, renaming);
+  }
+
+  private Renaming makeNaming(TRS trs, List<Term> lst) {
+    TermPrinter printer = new TermPrinter(trs.queryFunctionSymbolNames());
+    return printer.generateUniqueNaming(lst);
+  }
+
+  private void addHypothesis(PartialProof proof, String hypodesc) {
+    TRS trs = proof.getContext().getTRS();
+    var pair = EquationParser.parseEquation(hypodesc, trs);
+    Hypothesis hypo = new Hypothesis(pair.fst(), 8, pair.snd());
+    ProofState state = proof.getProofState().addHypothesis(hypo);
+    proof.addProofStep(state, DeductionInduct.createStep(proof, Optional.empty()));
+  }
+
+  private PartialProof setupProof(String eqdesc, String hypodesc) {
+    TRS trs = setupTRS();
+    var pair = EquationParser.parseEquation(eqdesc, trs);
+    PartialProof pp = new PartialProof(trs, FixedList.of(new EquationContext(pair.fst(), 19,
+      pair.snd())), lst -> makeNaming(trs, lst));
+    addHypothesis(pp, hypodesc);
+    return pp;
+  }
+
+  private PartialProof setupProof(String leftgr, String lhs, String rhs, String constr,
+                                  String rightgr, String hypodesc) {
+    TRS trs = setupTRS();
+    PartialProof pp = new PartialProof(trs, FixedList.of(readEquationContext(trs, leftgr, lhs,
+      rhs, constr, rightgr)), lst -> makeNaming(trs, lst));
+    addHypothesis(pp, hypodesc);
+    return pp;
+  }
+
+  /* ========== TESTS ========== */
+
+  @Test
+  public void testSuccessfulStepWithoutExtraTerms() {
+    PartialProof pp = setupProof("sum1(x) = sum2(x) | x > 0", "sum1(z) = iter(z, 0, 0) | z ≥ 0");
+    Hypothesis h8 = pp.getProofState().getHypothesisByName("H8");
+    OutputModule module = OutputModule.createUnitTestModule();
+    DeductionHypothesis step = DeductionHypothesis.createStep(pp, Optional.of(module), h8, false,
+                            EquationPosition.TOPLEFT, new MutableSubstitution());
+    assertTrue(step.commandDescription().equals("hypothesis H8 l with [z := x]"));
+    assertTrue(module.toString().equals(""));
+    FixedAnswerValidityChecker solver = new FixedAnswerValidityChecker(true);
+    Settings.smtSolver = solver;
+    assertTrue(step.verifyAndExecute(pp, Optional.of(module)));
+    assertTrue(module.toString().equals(""));
+    assertTrue(pp.getProofState().getEquations().size() == 1);
+    assertTrue(pp.getProofState().getHypotheses().size() == 1);
+    assertTrue(pp.getProofState().getOrderingRequirements().size() == 0);
+    assertTrue(pp.getProofState().getEquations().get(0).toString().equals(
+      "E20: (• , iter(x, 0, 0) ≈ sum2(x) | x > 0 , •)"));
+    step.explain(module);
+    assertTrue(module.toString().equals("We apply HYPOTHESIS to E19 with induction hypothesis H8 " +
+      "and substitution [z := x].  This does not cause any new ordering requirements to be " +
+      "imposed.\n\n"));
+    assertTrue(solver.queryQuestion(0).equals("(0 >= i1) or (i1 >= 0)"));
+  }
+
+  private Variable getVariable(String name, Renaming renaming) {
+    return (Variable)renaming.getReplaceable(name);
+  }
+
+  @Test
+  public void testSuccessfulStepWithExtraTerms() throws PositionFormatException {
+    PartialProof pp = setupProof("sum2(y)", "sum2(x)", "0 + sum1(x)", "y = x + 1 ∧ x > 0",
+      "sum1(y)", "sum1(z) = iter(z, 0, y) | z ≥ 0");
+    Hypothesis h8 = pp.getProofState().getHypothesisByName("H8");
+    OutputModule module = OutputModule.createUnitTestModule();
+    MutableSubstitution subst = new MutableSubstitution();
+    subst.extend(getVariable("y", pp.getProofState().getHypotheses().get(0).getRenaming()),
+                 TheoryFactory.createValue(0));
+    DeductionHypothesis step = DeductionHypothesis.createStep(pp, Optional.of(module), h8, false,
+                            EquationPosition.parse("r2"), subst);
+    assertTrue(step.commandDescription().equals("hypothesis H8 r2 with [y := 0, z := x]"));
+    assertTrue(module.toString().equals(""));
+    Settings.smtSolver = new FixedAnswerValidityChecker(true);
+    assertTrue(step.verifyAndExecute(pp, Optional.of(module)));
+    assertTrue(module.toString().equals(""));
+    assertTrue(pp.getProofState().getEquations().size() == 1);
+    assertTrue(pp.getProofState().getHypotheses().size() == 1);
+    assertTrue(pp.getProofState().getOrderingRequirements().size() == 1);
+    assertTrue(pp.getProofState().getEquations().get(0).toString().equals(
+      "E20: (sum2(y) , sum2(x) ≈ 0 + iter(x, 0, 0) | y = x + 1 ∧ x > 0 , sum1(y))"));
+    assertTrue(pp.getProofState().getOrderingRequirements().get(0).toString().equals(
+      "sum1(y) ≻ 0 + iter(x, 0, 0) | y = x + 1 ∧ x > 0"));
+    step.explain(module);
+    assertTrue(module.toString().equals("We apply HYPOTHESIS to E19 with induction hypothesis H8 " +
+      "and substitution [y := 0, z := x].  To this end, we impose the requirement that " +
+      "sum1(y) ≻ 0 + iter(x, 0, 0) | y = x + 1 ∧ x > 0.\n\n"));
+  }
+
+  @Test
+  public void testSuccessfulInverseStepWithoutExtraTerms() {
+    PartialProof pp = setupProof("sum1(x) = sum2(x) | x > 0", "iter(z, a, 0) = sum2(z)| z ≥ 0");
+    Hypothesis h8 = pp.getProofState().getHypothesisByName("H8");
+    OutputModule module = OutputModule.createUnitTestModule();
+    MutableSubstitution subst = new MutableSubstitution();
+    subst.extend(getVariable("a", pp.getProofState().getHypotheses().get(0).getRenaming()),
+                 TheoryFactory.createValue(1));
+    DeductionHypothesis step = DeductionHypothesis.createStep(pp, Optional.of(module), h8, true,
+                            EquationPosition.TOPRIGHT, subst);
+    assertTrue(step.commandDescription().equals("hypothesis H8^{-1} r with [a := 1, z := x]"));
+    Settings.smtSolver = new FixedAnswerValidityChecker(true);
+    assertTrue(step.verifyAndExecute(pp, Optional.of(module)));
+    assertTrue(pp.getProofState().getOrderingRequirements().size() == 0);
+    assertTrue(pp.getProofState().getEquations().get(0).toString().equals(
+      "E20: (• , sum1(x) ≈ iter(x, 1, 0) | x > 0 , •)"));
+    step.explain(module);
+    assertTrue(module.toString().equals("We apply HYPOTHESIS to E19 with induction hypothesis " +
+      "H8^{-1} and substitution [a := 1, z := x].  This does not cause any new ordering " +
+      "requirements to be imposed.\n\n"));
+  }
+
+  @Test
+  public void testSuccessfulInverseStepWithExtraTerms() throws PositionFormatException {
+    PartialProof pp = setupProof("sum1(z)", "sum1(sum1(x))", "0 + sum1(x)", "x = x",
+      "sum1(y)", "iter(z, 0, y) = sum1(y) | z ≥ 0");
+    Hypothesis h8 = pp.getProofState().getHypothesisByName("H8");
+    OutputModule module = OutputModule.createUnitTestModule();
+    MutableSubstitution subst = new MutableSubstitution();
+    subst.extend(getVariable("z", pp.getProofState().getHypotheses().get(0).getRenaming()),
+                 TheoryFactory.createValue(12));
+    DeductionHypothesis step = DeductionHypothesis.createStep(pp, Optional.of(module), h8, true,
+                            EquationPosition.parse("l1"), subst);
+    assertTrue(step.commandDescription().equals("hypothesis H8^{-1} l1 with [y := x, z := 12]"));
+    Settings.smtSolver = new FixedAnswerValidityChecker(true);
+    assertTrue(step.verifyAndExecute(pp, Optional.of(module)));
+    assertTrue(pp.getProofState().getOrderingRequirements().size() == 1);
+    assertTrue(pp.getProofState().getEquations().get(0).toString().equals(
+      "E20: (sum1(z) , sum1(iter(12, 0, x)) ≈ 0 + sum1(x) | x = x , sum1(y))"));
+    step.explain(module);
+    assertTrue(module.toString().equals("We apply HYPOTHESIS to E19 with induction hypothesis " +
+      "H8^{-1} and substitution [y := x, z := 12].  To this end, we impose the requirement that " +
+      "sum1(z) ≻ sum1(iter(12, 0, x)) | x = x.\n\n"));
+  }
+
+  @Test
+  public void testSuccessfulStepWithEqualLeftGreaterTerm() throws PositionFormatException {
+    PartialProof pp = setupProof("sum1(x)", "sum1(x)", "0 + sum1(x)", "x < y", "sum1(y)",
+      "iter(z, 0, y) = sum1(y) | z ≥ 0");
+    Hypothesis h8 = pp.getProofState().getHypothesisByName("H8");
+    OutputModule module = OutputModule.createUnitTestModule();
+    MutableSubstitution subst = new MutableSubstitution();
+    subst.extend(getVariable("z", pp.getProofState().getHypotheses().get(0).getRenaming()),
+                 TheoryFactory.createValue(12));
+    DeductionHypothesis step = DeductionHypothesis.createStep(pp, Optional.of(module), h8, true,
+                            EquationPosition.parse("l"), subst);
+    assertTrue(step.commandDescription().equals("hypothesis H8^{-1} l with [y := x, z := 12]"));
+    Settings.smtSolver = new FixedAnswerValidityChecker(true);
+    assertTrue(step.verifyAndExecute(pp, Optional.of(module)));
+    assertTrue(pp.getProofState().getOrderingRequirements().size() == 2);
+    assertTrue(pp.getProofState().getEquations().get(0).toString().equals(
+      "E20: (sum1(x) , iter(12, 0, x) ≈ 0 + sum1(x) | x < y , sum1(y))"));
+    step.explain(module);
+    assertTrue(module.toString().equals("We apply HYPOTHESIS to E19 with induction hypothesis " +
+      "H8^{-1} and substitution [y := x, z := 12].  To this end, we impose the requirements that " +
+      "sum1(x) ≻ iter(12, 0, x) | x < y and sum1(y) ≻ iter(12, 0, x) | x < y.\n\n"));
+  }
+
+  @Test
+  public void testSuccessfulStepWithEqualRightGreaterTerm() throws PositionFormatException {
+    PartialProof pp = setupProof("sum2(sum2(y))", "0 + sum1(x)", "sum1(x)", "x < y",
+      "sum1(x)", "sum1(y) = iter(z, 0, y) | z > 0");
+    Hypothesis h8 = pp.getProofState().getHypothesisByName("H8");
+    OutputModule module = OutputModule.createUnitTestModule();
+    MutableSubstitution subst = new MutableSubstitution();
+    subst.extend(getVariable("z", pp.getProofState().getHypotheses().get(0).getRenaming()),
+                 TheoryFactory.createValue(7));
+    DeductionHypothesis step = DeductionHypothesis.createStep(pp, Optional.of(module), h8, false,
+                            EquationPosition.parse("r"), subst);
+    assertTrue(step.commandDescription().equals("hypothesis H8 r with [y := x, z := 7]"));
+    Settings.smtSolver = new FixedAnswerValidityChecker(true);
+    assertTrue(step.verifyAndExecute(pp, Optional.of(module)));
+    assertTrue(pp.getProofState().getOrderingRequirements().size() == 2);
+    assertTrue(pp.getProofState().getEquations().get(0).toString().equals(
+      "E20: (sum2(sum2(y)) , 0 + sum1(x) ≈ iter(7, 0, x) | x < y , sum1(x))"));
+    step.explain(module);
+    assertTrue(module.toString().equals("We apply HYPOTHESIS to E19 with induction hypothesis " +
+      "H8 and substitution [y := x, z := 7].  To this end, we impose the requirements that " +
+      "sum1(x) ≻ iter(7, 0, x) | x < y and sum2(sum2(y)) ≻ iter(7, 0, x) | x < y.\n\n"));
+  }
+
+  @Test
+  public void testSuccessfulFinishingStep() throws PositionFormatException {
+     PartialProof pp = setupProof("sum1(y)", "sum1(sum1(x))", "sum1(iter(12, 0, x))", "y > x",
+      "sum2(y)", "iter(z, 0, y) = sum1(y) | z ≥ 0");
+    Hypothesis h8 = pp.getProofState().getHypothesisByName("H8");
+    OutputModule module = OutputModule.createUnitTestModule();
+    MutableSubstitution subst = new MutableSubstitution();
+    subst.extend(getVariable("z", pp.getProofState().getHypotheses().get(0).getRenaming()),
+                 TheoryFactory.createValue(12));
+    Settings.smtSolver = new FixedAnswerValidityChecker(true);
+    DeductionHypothesis step = DeductionHypothesis.createStep(pp, Optional.of(module), h8, true,
+                            EquationPosition.parse("l1"), subst);
+    assertTrue(step.commandDescription().equals("hypothesis H8^{-1} l1 with [y := x, z := 12]"));
+    assertTrue(step.verifyAndExecute(pp, Optional.of(module)));
+    assertTrue(pp.getProofState().getOrderingRequirements().size() == 1);
+    assertTrue(pp.getProofState().getEquations().size() == 1);
+    assertTrue(pp.getProofState().getEquations().get(0).toString().equals(
+      "E20: (sum1(y) , sum1(iter(12, 0, x)) ≈ sum1(iter(12, 0, x)) | y > x , sum2(y))"));
+    step.explain(module);
+    assertTrue(module.toString().equals("We apply HYPOTHESIS to E19 with induction hypothesis " +
+      "H8^{-1} and substitution [y := x, z := 12].  To this end, we impose the requirement that " +
+      "sum1(y) ≻ sum1(iter(12, 0, x)) | y > x.\n\n"));
+  }
+
+  @Test
+  public void testLeftGreaterEqualsRightGamma() throws PositionFormatException {
+    PartialProof pp = setupProof("0 + sum1(x)", "sum2(x)", "sum1(x)", "true", "sum1(x + 3)",
+      "sum2(x) = 0 + sum1(x)");
+    Hypothesis h8 = pp.getProofState().getHypothesisByName("H8");
+    OutputModule module = OutputModule.createUnitTestModule();
+    MutableSubstitution subst = new MutableSubstitution();
+    DeductionHypothesis step = DeductionHypothesis.createStep(pp, Optional.of(module), h8, false,
+                                                       EquationPosition.parse("l"), subst);
+    assertTrue(step.commandDescription().equals("hypothesis H8 l with [x := x]"));
+    assertTrue(step.verifyAndExecute(pp, Optional.of(module)));
+    assertTrue(pp.getProofState().getOrderingRequirements().size() == 1);
+    step.explain(module);
+    assertTrue(module.toString().equals("We apply HYPOTHESIS to E19 with induction hypothesis " +
+      "H8 and substitution [x := x].  To this end, we impose the requirement that " +
+      "sum1(x + 3) ≻ 0 + sum1(x).\n\n"));
+  }
+
+  @Test
+  public void testLeftGreaterEqualsContextOfRightGamma() throws PositionFormatException {
+    PartialProof pp = setupProof("0 + sum1(x)", "0 + sum2(x)", "iter(x, 0, x)", "true",
+      "iter(x, x, 0)", "sum1(z) = sum2(z)");
+    Hypothesis h8 = pp.getProofState().getHypothesisByName("H8");
+    OutputModule module = OutputModule.createUnitTestModule();
+    MutableSubstitution subst = new MutableSubstitution();
+    DeductionHypothesis step = DeductionHypothesis.createStep(pp, Optional.of(module), h8, true,
+                                                       EquationPosition.parse("l2"), subst);
+    assertTrue(step.commandDescription().equals("hypothesis H8^{-1} l2 with [z := x]"));
+    assertTrue(step.verifyAndExecute(pp, Optional.of(module)));
+    assertTrue(pp.getProofState().getOrderingRequirements().size() == 0);
+    step.explain(module);
+    assertTrue(module.toString().equals("We apply HYPOTHESIS to E19 with induction hypothesis " +
+      "H8^{-1} and substitution [z := x].  This does not cause any new ordering requirements to " +
+      "be imposed.\n\n"));
+  }
+
+  @Test
+  public void testNoSuitableInductionHypothesis() {
+    PartialProof pp = setupProof("sum1(x)", "sum1(x)", "sum2(x)", "x > 0", "sum2(x)",
+      "sum1(x) = sum2(x) | x ≥ 0");
+    Hypothesis h8 = pp.getProofState().getHypothesisByName("H8");
+    OutputModule module = OutputModule.createUnitTestModule();
+    MutableSubstitution subst = new MutableSubstitution();
+    assertTrue(DeductionHypothesis.createStep(pp, Optional.of(module), h8, false,
+                                              EquationPosition.TOPLEFT, subst) == null);
+    assertTrue(module.toString().equals("The hypothesis cannot be applied, as it would cause an " +
+      "obviously unsatisfiable ordering requirement to be imposed.\n\n"));
+  }
+
+  @Test
+  public void testHypothesisDoesNotMatch() {
+    PartialProof pp = setupProof("sum1(x) = sum2(x) | x > 0", "sum1(sum1(x)) = sum2(z)| z ≥ 0");
+    Hypothesis h8 = pp.getProofState().getHypothesisByName("H8");
+    OutputModule module = OutputModule.createUnitTestModule();
+    assertTrue(DeductionHypothesis.createStep(pp, Optional.of(module), h8, false,
+                       EquationPosition.TOPLEFT, new MutableSubstitution()) == null);
+    assertTrue(module.toString().equals("The induction hypothesis does not apply due to failed " +
+      "matching (matching debug info says: The term x does not instantiate sum1(x) as it " +
+      "is not an application.)" +
+      "\n\n"));
+  }
+
+  @Test
+  public void testHypothesisDoesNotMatchInverse() {
+    PartialProof pp = setupProof("sum1(x) = sum2(x) | x > 0", "sum1(z) = sum2(z)| z ≥ 0");
+    Hypothesis h8 = pp.getProofState().getHypothesisByName("H8");
+    OutputModule module = OutputModule.createUnitTestModule();
+    assertTrue(DeductionHypothesis.createStep(pp, Optional.of(module), h8, true,
+                       EquationPosition.TOPLEFT, new MutableSubstitution()) == null);
+    assertTrue(module.toString().equals("The induction hypothesis does not apply due to failed " +
+      "matching (matching debug info says: Constant sum2 is not instantiated by sum1.)\n\n"));
+  }
+
+  @Test
+  public void testConstraintNotSatisfied() {
+    PartialProof pp = setupProof("sum1(x) = sum2(x) | x > 0", "sum1(z) = sum2(z)| z ≥ 0");
+    Hypothesis h8 = pp.getProofState().getHypothesisByName("H8");
+    OutputModule module = OutputModule.createUnitTestModule();
+    DeductionHypothesis step = DeductionHypothesis.createStep(pp, Optional.of(module), h8, true,
+                           EquationPosition.TOPRIGHT, new MutableSubstitution());
+    assertTrue(module.toString().equals(""));
+    Settings.smtSolver = new FixedAnswerValidityChecker(false, false);
+    assertFalse(step.verifyAndExecute(pp, Optional.of(module)));
+    assertTrue(module.toString().equals("The induction hypothesis does not apply: I could not " +
+      "prove that x > 0 ⊨ x ≥ 0.\n\n"));
+  }
+
+  @Test
+  public void testCreateStepWithExtraVariables() throws PositionFormatException {
+    PartialProof pp = setupProof("sum2(y)", "sum2(x)", "0 + sum1(x)", "y = x + 1 ∧ x > 0",
+      "sum1(y)", "sum1(z) = iter(z, 0, y) | z ≥ a");
+    Hypothesis h8 = pp.getProofState().getHypothesisByName("H8");
+    OutputModule module = OutputModule.createUnitTestModule();
+    MutableSubstitution subst = new MutableSubstitution();
+    assertTrue(DeductionHypothesis.createStep(pp, Optional.of(module), h8, false,
+                            EquationPosition.parse("r2"), subst) == null);
+    assertTrue(subst.domain().size() == 0);
+    assertTrue(module.toString().equals("Not enough information given: I could not determine " +
+      "the substitution to be used for y, a.\n\n"));
+  }
+}
+

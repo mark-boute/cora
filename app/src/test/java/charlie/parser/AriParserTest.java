@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2019--2024 Cynthia Kop
+ Copyright 2019--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -18,8 +18,8 @@ package charlie.parser;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
-import charlie.exceptions.ParseException;
 import charlie.util.LookupMap;
+import charlie.parser.lib.ParsingException;
 import charlie.parser.lib.ErrorCollector;
 import charlie.parser.Parser.*;
 
@@ -28,7 +28,7 @@ public class AriParserTest {
   public void testIncorrectFormat() {
     ErrorCollector collector = new ErrorCollector();
     try { AriParser.readProgramFromString("(format CTRS) (fun true 0)", collector); }
-    catch ( ParseException e ) {
+    catch ( ParsingException e ) {
       assertTrue(e.getMessage().equals("1:9: Format is not currently supported: CTRS\n"));
       return;
     }
@@ -48,7 +48,7 @@ public class AriParserTest {
     ParserProgram prog = AriParser.readProgramFromString(
       "(format higher-order) (fun f a)", collector);
     assertTrue(prog.fundecs().get("f").type().toString().equals("a"));
-    assertTrue(collector.queryCollectedMessages().equals("1:30: Undeclared sort: a\n"));
+    assertTrue(collector.toString().equals("1:30: Undeclared sort: a\n"));
   }
 
   @Test
@@ -64,7 +64,7 @@ public class AriParserTest {
     ParserProgram prog = AriParser.readProgramFromString(
       "(format higher-order) (sort b) (fun f (-> b a b))", collector);
     assertTrue(prog.fundecs().get("f").type().toString().equals("b → a → b"));
-    assertTrue(collector.queryCollectedMessages().equals("1:45: Undeclared sort: a\n"));
+    assertTrue(collector.toString().equals("1:45: Undeclared sort: a\n"));
   }
 
   @Test
@@ -74,7 +74,7 @@ public class AriParserTest {
       "(format higher-order) (sort b) (fun f (a b)) (fun g b)", collector);
     assertTrue(prog.fundecs().get("f").type().toString().equals("a → b"));
     assertTrue(prog.fundecs().get("g").type().toString().equals("b"));
-    assertTrue(collector.queryCollectedMessages().equals(
+    assertTrue(collector.toString().equals(
       "1:40: Expected -> (arrow) but got IDENTIFIER (a).\n"));
   }
 
@@ -84,7 +84,7 @@ public class AriParserTest {
     ParserProgram prog = AriParser.readProgramFromString(
       "(format higher-order) (sort b) (fun f ()) (fun g b)", collector);
     assertTrue(prog.fundecs().get("f") == null);
-    assertTrue(collector.queryCollectedMessages().equals(
+    assertTrue(collector.toString().equals(
       "1:40: Expected -> (arrow) but got BRACKETCLOSE ()).\n"));
   }
 
@@ -96,7 +96,7 @@ public class AriParserTest {
       "(sort o)\n" +
       "(fun f (-> o o))\n" +
       "(fun f (-> o o o))", collector);
-    assertTrue(collector.queryCollectedMessages().equals(
+    assertTrue(collector.toString().equals(
       "4:6: Duplicate definition of function symbol f\n"));
   }
 
@@ -113,9 +113,9 @@ public class AriParserTest {
       "(rule (map nil F) nil)\n" +
       "(rule (map (cons x l) F) (cons (F x) (map l F)))\n");
     assertTrue(program.rules().size() == 2);
-    assertTrue(program.rules().get(0).toString().equals("{ [] } @(map, [nil, F]) → nil"));
+    assertTrue(program.rules().get(0).toString().equals("{ [] } @(map, [nil, F]) -> nil"));
     assertTrue(program.rules().get(1).toString().equals(
-      "{ [] } @(map, [@(cons, [x, l]), F]) → @(cons, [@(F, [x]), @(map, [l, F])])"));
+      "{ [] } @(map, [@(cons, [x, l]), F]) -> @(cons, [@(F, [x]), @(map, [l, F])])"));
   }
 
   @Test
@@ -131,8 +131,8 @@ public class AriParserTest {
       collector
     );
     assertTrue(program.rules().size() == 2);
-    assertTrue(program.rules().get(0).toString().equals("{ [] } @(g, [x, x]) → x"));
-    assertTrue(program.rules().get(1).toString().equals("{ [] } @(f, [x, x]) → x"));
+    assertTrue(program.rules().get(0).toString().equals("{ [] } @(g, [x, x]) -> x"));
+    assertTrue(program.rules().get(1).toString().equals("{ [] } @(f, [x, x]) -> x"));
     assertTrue(collector.queryErrorCount() == 0);
   }
 
@@ -147,11 +147,11 @@ public class AriParserTest {
       "(rule (app (lambda ((x a)) (Z x)) y) (Z y))\n");
     assertTrue(program.rules().size() == 3);
     assertTrue(program.rules().get(0).toString().equals(
-      "{ [] } @(f, [Z]) → @(g, [λx::b.@(Z, [x])])"));
+      "{ [] } @(f, [Z]) -> @(g, [LAMBDA x::b.@(Z, [x])])"));
     assertTrue(program.rules().get(1).toString().equals(
-      "{ [] } @(f, [Z]) → @(g, [λx::a → b.λy::a.@(Z, [x])])"));
+      "{ [] } @(f, [Z]) -> @(g, [LAMBDA x::a → b.LAMBDA y::a.@(Z, [x])])"));
     assertTrue(program.rules().get(2).toString().equals(
-      "{ [] } @(app, [λx::a.@(Z, [x]), y]) → @(Z, [y])"));
+      "{ [] } @(app, [LAMBDA x::a.@(Z, [x]), y]) -> @(Z, [y])"));
   }
 
   @Test
@@ -162,7 +162,7 @@ public class AriParserTest {
       "(sort a)\n" +
       "(rule b (lambda () b))\n",
       collector);
-    assertTrue(collector.queryCollectedMessages().equals(
+    assertTrue(collector.toString().equals(
       "3:10: Lambda should have at least one variable.\n"));
   }
 }

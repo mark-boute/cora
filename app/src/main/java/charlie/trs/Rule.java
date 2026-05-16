@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2024 Cynthia Kop
+ Copyright 2024--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -20,12 +20,11 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.LinkedList;
 import java.util.Collections;
-import charlie.exceptions.IllegalRuleException;
-import charlie.exceptions.NullStorageException;
-import charlie.exceptions.TypingException;
-import charlie.exceptions.UnexpectedPatternException;
+import charlie.util.NullStorageException;
 import charlie.types.Type;
 import charlie.types.TypeFactory;
+import charlie.terms.replaceable.Replaceable;
+import charlie.terms.replaceable.Renaming;
 import charlie.terms.*;
 import charlie.trs.TrsProperties.*;
 
@@ -112,6 +111,20 @@ public class Rule {
     return _tvars;
   }
 
+  /**
+   * Returns a set with all replaceables occurring in the current rule.  This is a modifiable set;
+   * changing it will not affect the Rule.
+   */
+  public Set<Replaceable> queryAllReplaceables() {
+    Set<Replaceable> ret = new TreeSet<Replaceable>();
+    for (Replaceable x : _left.freeReplaceables()) ret.add(x);
+    for (Replaceable x : _constraint.freeReplaceables()) ret.add(x);
+    if (_properties.rightReplaceablePolicy() == TrsProperties.FreshRight.ANY) {
+      for (Replaceable x : _right.freeReplaceables()) ret.add(x);
+    }
+    return ret;
+  }
+
   /** Only for internal use within the trs package. */
   RuleRestrictions queryProperties() {
     return _properties;
@@ -196,6 +209,11 @@ public class Rule {
     return builder.toString();
   }
 
+  /** Returns the right replaceable policy. */
+  public FreshRight queryRightReplaceablePolicy() {
+    return queryProperties().rightReplaceablePolicy();
+  }
+
   // ============================== correctness checking starts here ==============================
 
    /**
@@ -221,25 +239,25 @@ public class Rule {
   /** Checks that both sides of a rule have the same type, and the constraint has type Bool */
   private void checkTypesCorrect() {
     if (!_left.queryType().equals(_right.queryType())) {
-      throw new TypingException("Rule", "checkTypesCorrect", "right-hand side",
-                                _right.queryType().toString(), _left.queryType().toString());
+      throw new TypingException("Typing error creating rule: left-hand side ", _left, " has type ",
+        _left.queryType(), " while right-hand side ", _right," has type ", _right.queryType(), ".");
     }
     Type t = _constraint.queryType();
     if (!t.equals(TypeFactory.boolSort) || !t.isTheoryType()) {
-      throw new IllegalRuleException("constraint [" + _constraint.toString() + "] does not " +
-        "have the theory sort Bool (it has type " + t.toString() + ").");
+      throw new IllegalRuleException(_left, _right, _constraint, "the constraint does not have " +
+        "type Bool (it has type ", t, ").");
     }
   }
 
   /** Checks that both left- and right-hand side are closed. */
   private void checkBothSidesClosed() {
     if (!_left.isClosed()) { 
-      throw new IllegalRuleException("left-hand side of rule [" + toString() + "] is not closed " +
-        "(that is, freely contains a binder-variable).");
+      throw new IllegalRuleException(_left, _right, _constraint, "the left-hand side is not " +
+        "closed (that is, it freely contains a binder-variable).");
     }
     if (!_right.isClosed()) { 
-      throw new IllegalRuleException("right-hand side of rule [" + toString() + "] is not closed " +
-        "(that is, freely contains a binder-variable).");
+      throw new IllegalRuleException(_left, _right, _constraint, "the right-hand side is not " +
+        "closed (that is, it freely contains a binder-variable).");
     }
   }
 
@@ -269,12 +287,12 @@ public class Rule {
     }
     if (couldBeTheory) {
       if (_left.isTheoryTerm()) {
-        throw new IllegalRuleException("left-hand side of rule [" + toString() +
-          "] is a theory term!");
+        throw new IllegalRuleException(_left, _right, _constraint, "the left-hand side is a " +
+          "theory term!");
       }
       else {
-        throw new IllegalRuleException("left-hand side of rule [" + toString() +
-          "] could be instantiated to a theory term!");
+        throw new IllegalRuleException(_left, _right, _constraint, "the left-hand side could be " +
+          "instantiated to a theory term!");
       }
     }
   }
@@ -282,16 +300,16 @@ public class Rule {
   /** Checks that the constraint is a theory term. */
   private void checkConstraintTheory() {
     if (!_constraint.isTheoryTerm()) {
-      throw new IllegalRuleException("constraint [" + _constraint.toString() +
-        "] is not a theory term.");
+      throw new IllegalRuleException(_left, _right, _constraint,
+        "the constraint is not a theory term.");
     }
   }
 
   /** Checks that the constraint is a first-order term. */
   private void checkConstraintFirstOrder() {
     if (!_constraint.isFirstOrder()) {
-      throw new IllegalRuleException("constraint [" + _constraint.toString() +
-        "] is not first-order.");
+      throw new IllegalRuleException(_left, _right, _constraint,
+        "the constraint is not first-order.");
     }
   }
 }

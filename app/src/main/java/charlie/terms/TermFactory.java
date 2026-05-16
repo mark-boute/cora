@@ -15,10 +15,11 @@
 
 package charlie.terms;
 
-import com.google.common.collect.ImmutableList;
+import java.util.ArrayList;
 import java.util.List;
-import charlie.exceptions.ArityException;
+import charlie.util.FixedList;
 import charlie.types.*;
+import charlie.terms.replaceable.Replaceable;
 
 public class TermFactory {
   /** Create a non-binder variable with the given name and type. */
@@ -72,7 +73,7 @@ public class TermFactory {
     if (arity == 0) return new Var(name, type);
     if (arity < 0) throw new IllegalArgumentException("TermFactory::createMetaVar " +
       "received negative arity " + arity + ".");
-    ImmutableList.Builder<Type> builder = ImmutableList.<Type>builder();
+    FixedList.Builder<Type> builder = new FixedList.Builder<Type>();
     Type tmp = type;
     for (int i = 0; i < arity; i++) {
       switch (tmp) {
@@ -80,16 +81,16 @@ public class TermFactory {
           builder.add(inp);
           tmp = out;
           break;
-        default: throw new ArityException("TermFactory", "createMetaVar",
-          "trying to create a meta-variable with arity " + arity + " while the given type (" +
-          type.toString() + ") only has arity " + i);
+        default: throw new TypingException("Cannot construct meta-variable with type ", type,
+          " and arity " + arity + " since the arity may not be larger than the number of input " +
+          "arguments to the type.");
       }
     }
     return new HigherMetaVar(name, builder.build(), tmp);
   }
 
   /** Creates a meta-variable X with arity k */
-  public static MetaVariable createMetaVar(String name, ImmutableList<Type> inputs, Type output) {
+  public static MetaVariable createMetaVar(String name, FixedList<Type> inputs, Type output) {
     if (inputs.size() == 0) return new Var(name, output);
     return new HigherMetaVar(name, inputs, output);
   }
@@ -97,17 +98,17 @@ public class TermFactory {
   /** Creates a meta-variable X with arity k */
   public static MetaVariable createMetaVar(String name, List<Type> inputs, Type output) {
     if (inputs.size() == 0) return new Var(name, output);
-    return new HigherMetaVar(name, ImmutableList.copyOf(inputs), output);
+    return new HigherMetaVar(name, FixedList.copy(inputs), output);
   }
 
   /** Creates a meta-variable X with arity 1. */
   public static MetaVariable createMetaVar(String name, Type input, Type output) {
-    return new HigherMetaVar(name, ImmutableList.<Type>builder().add(input).build(), output);
+    return new HigherMetaVar(name, FixedList.of(input), output);
   }
 
   /** Creates a meta-variable X with arity 2. */
   public static MetaVariable createMetaVar(String name, Type in1, Type in2, Type output) {
-    return new HigherMetaVar(name, ImmutableList.<Type>builder().add(in1).add(in2).build(), output);
+    return new HigherMetaVar(name, FixedList.of(in1, in2), output);
   }
 
   /** Creates a tuple with 2 elements */
@@ -138,7 +139,7 @@ public class TermFactory {
    * including another application.
    */
   public static Term createApp(Term head, Term arg1, Term arg2) {
-    return head.apply(ImmutableList.<Term>builder().add(arg1).add(arg2).build());
+    return head.apply(List.of(arg1, arg2));
   }
 
   /**
@@ -163,17 +164,33 @@ public class TermFactory {
 
   /** Create a meta-application Z[arg] */
   public static Term createMeta(MetaVariable mv, Term arg) {
-    return new MetaApplication(mv, ImmutableList.<Term>builder().add(arg).build());
+    return new MetaApplication(mv, List.of(arg));
   }
 
   /** Create a meta-application Z[arg2] */
   public static Term createMeta(MetaVariable mv, Term arg1, Term arg2) {
-    return new MetaApplication(mv, ImmutableList.<Term>builder().add(arg1).add(arg2).build());
+    return new MetaApplication(mv, List.of(arg1, arg2));
   }
 
-  /** Creates an empty substitution. */
-  public static Substitution createEmptySubstitution() {
-    return new Subst();
+  /**
+   * Creates the meta-application λx1...xn.Z[x1,...,xn] if x is a meta-variable Z,
+   * otherwise returns x unmodified.
+   */
+  public static Term makeTerm(Replaceable x) {
+    if (x instanceof Term s) return s;
+    if (x instanceof HigherMetaVar z) {
+      ArrayList<Term> args = new ArrayList<Term>();
+      for (int i = 1; i <= z.queryArity(); i++) {
+        args.add(new Binder("b" + i, z.queryInputType(i)));
+      }
+      Term ret = new MetaApplication(z, args);
+      for (int i = args.size()-1; i >= 0; i--) {
+        ret = new Abstraction(args.get(i).queryVariable(), ret);
+      }
+      return ret;
+    }
+    throw new IllegalArgumentException("Given replaceable " + x.queryName() + " which is " +
+      "neither a term nor a higher meta-variable!");
   }
 }
 

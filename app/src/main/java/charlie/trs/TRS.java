@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2024 Cynthia Kop
+ Copyright 2024--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,18 +15,18 @@
 
 package charlie.trs;
 
-import com.google.common.collect.ImmutableList;
+import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.stream.Collectors;
-import charlie.exceptions.IndexingException;
-import charlie.exceptions.IllegalRuleException;
-import charlie.exceptions.IllegalSymbolException;
-import charlie.exceptions.NullStorageException;
+import java.util.stream.Stream;
+import charlie.util.NullStorageException;
 import charlie.util.Pair;
+import charlie.util.FixedList;
 import charlie.types.Type;
 import charlie.terms.FunctionSymbol;
 import charlie.terms.Term;
@@ -79,8 +79,8 @@ public class TRS {
   public enum RuleScheme { Beta, Eta, Calc };
 
   private final Alphabet _alphabet;
-  private final ImmutableList<Rule> _rules;
-  private final ImmutableList<RuleScheme> _schemes;
+  private final FixedList<Rule> _rules;
+  private final FixedList<RuleScheme> _schemes;
   private final TreeSet<String> _private;
   private TreeSet<FunctionSymbol> _defined;
   private String _trsKind;
@@ -88,26 +88,54 @@ public class TRS {
   private boolean _theoriesIncluded;
   private boolean _productsIncluded;
   private RuleRestrictions _rulesProperties;
+  private HashMap<FunctionSymbol, List<Rule>> _functionRules;
+  private LinkedList<Rule> _variableRules;
 
   /**
    * Create a TRS with the given settings.  Default because this should only be called by the
    * factory.
    */
-  TRS(Alphabet alphabet, List<Rule> rules, ImmutableList<RuleScheme> schemes,
+  TRS(Alphabet alphabet, List<Rule> rules, FixedList<RuleScheme> schemes,
       Collection<String> privateSymbols, String trsKindName, TermLevel trsLevel,
       boolean includeTheories, boolean includeProducts, RuleRestrictions restrictions) {
 
-    if (alphabet == null) throw new NullStorageException("TRS", "alphabet");
-    if (rules == null) throw new NullStorageException("TRS", "rules");
+    _alphabet = alphabet;
+    _rules = FixedList.copy(rules);
+    _schemes = schemes;
+    if (privateSymbols == null) _private = new TreeSet<String>();
+    else _private = new TreeSet<String>(privateSymbols);
+
+    construct(trsKindName, trsLevel, includeTheories, includeProducts, restrictions);
+  }
+
+  /**
+   * Create a TRS with the given settings.  Default because this should only be called by the
+   * createDerivative function
+   */
+  TRS(Alphabet alphabet, FixedList<Rule> rules, FixedList<RuleScheme> schemes,
+      Collection<String> privateSymbols, String trsKindName, TermLevel trsLevel,
+      boolean includeTheories, boolean includeProducts, RuleRestrictions restrictions) {
+
+    _alphabet = alphabet;
+    _rules = rules;
+    _schemes = schemes;
+    if (privateSymbols == null) _private = new TreeSet<String>();
+    else _private = new TreeSet<String>(privateSymbols);
+
+    construct(trsKindName, trsLevel, includeTheories, includeProducts, restrictions);
+  }
+
+  /** Helper function for the constructors: does all the work for the construction. */
+  private void construct(String trsKindName, TermLevel trsLevel, boolean includeTheories,
+                         boolean includeProducts, RuleRestrictions restrictions) {
+    if (_alphabet == null) throw new NullStorageException("TRS", "alphabet");
+    if (_rules == null) throw new NullStorageException("TRS", "rules");
+    if (_schemes == null) throw new NullStorageException("TRS", "rule schemes");
 
     _theoriesIncluded = includeTheories;
     _productsIncluded = includeProducts;
     _level = trsLevel;
-    _alphabet = alphabet;
-    _schemes = schemes;
     _trsKind = trsKindName;
-    if (privateSymbols == null) _private = new TreeSet<String>();
-    else _private = new TreeSet<String>(privateSymbols);
     _defined = new TreeSet<FunctionSymbol>();
 
     // ensure that the alphabet follows the requirements we just stored
@@ -115,21 +143,23 @@ public class TRS {
 
     // build the rules list, and collect the actual rule restrictions while we're at it
     _rulesProperties = new RuleRestrictions();
-    ImmutableList.Builder<Rule> rulebuilder = ImmutableList.<Rule>builder();
-    for (Rule rule : rules) {
+    for (Rule rule : _rules) {
       if (rule == null) throw new NullStorageException("TRS", "one of the rules");
       _rulesProperties = _rulesProperties.supremum(rule.queryProperties());
-      rulebuilder.add(rule);
       FunctionSymbol root = rule.queryRoot();
       if (root != null) _defined.add(root);
     }
-    _rules = rulebuilder.build();
 
     // and give an error if we don't satisfy the given restrictions on the rules
     if (restrictions != null) {
       String problem = restrictions.checkCoverage(_rulesProperties);
-      if (problem != null) throw new IllegalRuleException(problem);
+      if (problem != null) throw new IllegalRuleException("The given rules are not suitable for " +
+        trsKindName + "s because " + problem);
     }
+
+    // we will compute _functionRules and _variableRules only when we need them
+    _functionRules = null;
+    _variableRules = null;
   }
 
   /** This checks that the alphabet follows the properties stored for the TRS terms. */
@@ -137,12 +167,12 @@ public class TRS {
     for (FunctionSymbol f : _alphabet.getSymbols()) {
       Type type = f.queryType();
       if (_level == TermLevel.FIRSTORDER && type.queryTypeOrder() > 1) {
-        throw new IllegalSymbolException("TRS", f.toString(), "Symbol " + f.toString() +
-          " with a type " + type.toString() + " cannot occur in a first-order TRS.");
+        throw new IllegalSymbolException(f, _trsKind, "higher-order symbols cannot occur in a " +
+          "first-order TRS.");
       }
       if (!_productsIncluded && type.hasProducts()) {
-        throw new IllegalSymbolException("TRS", f.toString(), "Symbol with a type " +
-          type.toString() + " cannot occur in a product-free TRS.");
+        throw new IllegalSymbolException(f, _trsKind, "product types cannot occur in a " +
+          "product-free TRS.");
       }
     }
   }
@@ -172,16 +202,16 @@ public class TRS {
     return _rules.size();
   }
 
-  /** For 0 ≤ index < queryRuleCount(), this returns one of the rules in the system. */
+  /**
+   * For 0 ≤ index < queryRuleCount(), this returns one of the rules in the system.
+   * @throws IndexOutOfBoundsException
+   */
   public Rule queryRule(int index) {
-    if (index < 0 || index >= queryRuleCount()) {
-      throw new IndexingException("TRS", "queryRule", index, 0, queryRuleCount()-1);
-    }
     return _rules.get(index);
   }
 
   /** Returns the rules in this TRS as a list. */
-  public ImmutableList<Rule> queryRules() {
+  public FixedList<Rule> queryRules() {
     return _rules;
   }
 
@@ -190,11 +220,11 @@ public class TRS {
     return _schemes.size();
   }
 
-  /** For 0 ≤ index < querySchemeCount(), this returns one of the schemes in the system. */
+  /**
+   * For 0 ≤ index < querySchemeCount(), this returns one of the schemes in the system.
+   * @throws IndexOutOfBoundsException
+   */
   public RuleScheme queryScheme(int index) {
-    if (index < 0 || index >= querySchemeCount()) {
-      throw new IndexingException("TRS", "queryScheme", index, 0, querySchemeCount()-1);
-    }
     return _schemes.get(index);
   }
 
@@ -257,6 +287,17 @@ public class TRS {
    * TRS.
    */
   public TRS createDerivative(List<Rule> newrules, Alphabet newAlphabet) {
+    return new TRS(newAlphabet, newrules, _schemes, _private, _trsKind, _level, _theoriesIncluded,
+                   _productsIncluded, null);
+  }
+
+  /**
+   * Creates a TRS with schemes and the restrictions for term rewriting as the current one has, but
+   * with the given rules and alphabet replacing the original ones.  No restrictions are imposed on
+   * the new rules, not even the restrictions on term formation that become a property of the new
+   * TRS.
+   */
+  public TRS createDerivative(FixedList<Rule> newrules, Alphabet newAlphabet) {
     return new TRS(newAlphabet, newrules, _schemes, _private, _trsKind, _level, _theoriesIncluded,
                    _productsIncluded, null);
   }
@@ -375,6 +416,69 @@ public class TRS {
     }
     ret.append("\n");
     return ret.toString();
+  }
+
+  /**
+   * Finds all the rules that are headed by the given function symbol, or by a variable /
+   * meta-variable application which may be instantiated to a term headed by the symbol.
+   * @return a stream of such rules, including those headed by a variable if withVar is true.
+   */
+  public Stream<Rule> queryRulesForSymbol(FunctionSymbol func, boolean withVar) {
+    if (_functionRules == null) computeRulesCache();
+    List<Rule> funcRules = _functionRules.getOrDefault(func, new LinkedList<>());
+    if (!withVar) return funcRules.stream();
+    Type functype = func.queryType();
+    return Stream.concat(funcRules.stream(), _variableRules.stream().filter(
+        r -> isPotentialOutputType(functype, r.queryLeftSide().queryHead().queryType())));
+  }
+
+  /** This fills the _functionRules and _variableRules storages.  */
+  private void computeRulesCache() {
+    _functionRules = new HashMap<FunctionSymbol,List<Rule>>();
+    _variableRules = new LinkedList<Rule>();
+    for (Rule rule : queryRules()) {
+      Term lhs = rule.queryLeftSide();
+      if (lhs.isFunctionalTerm()) {
+        FunctionSymbol f = lhs.queryRoot();
+        List<Rule> l = _functionRules.getOrDefault(f, new LinkedList<>());
+        l.add(rule);
+        _functionRules.put(f, l);
+      }
+      else if (lhs.queryHead().isMetaApplication()) {
+        _variableRules.add(rule);
+      }
+    }
+  }
+
+  /**
+   * This helper method for queryRulesForSymbol returns true if longtype has a shape
+   * A1 →...→ An → outputtype (with n ≥ 0).
+   */
+  private boolean isPotentialOutputType(Type longtype, Type outputtype) {
+    int nArgs = longtype.queryArity() - outputtype.queryArity();
+    if (nArgs < 0) return false;
+    while (nArgs > 0 && longtype.isArrowType()) {
+      nArgs--;
+      longtype = longtype.subtype(2);
+    }
+    return longtype.equals(outputtype);
+  }
+
+  /**
+   * If all rules of the form f l1...lk → r| φ have the same arity k (including calculation rules),
+   * then this returns k, which is at least 0.  If not, it returns -1.
+   */
+  public int queryRuleArity(FunctionSymbol f) {
+    boolean first = true;
+    int ret = 0;
+    if (_functionRules == null) computeRulesCache();
+    if (f.isTheorySymbol()) { ret = f.queryArity(); first = false; }
+    if (!_functionRules.containsKey(f)) return ret;
+    for (Rule rule : _functionRules.get(f)) {
+      if (first) { ret = rule.queryLeftSide().numberArguments(); first = false; }
+      else if (ret != rule.queryLeftSide().numberArguments()) return -1;
+    }
+    return ret;
   }
 }
 

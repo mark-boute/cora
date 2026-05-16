@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -20,9 +20,10 @@ import java.util.List;
 import java.util.TreeMap;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
-import charlie.exceptions.*;
+import charlie.util.NullStorageException;
 import charlie.types.TypeFactory;
 import charlie.terms.position.*;
+import charlie.terms.replaceable.ReplaceableList;
 
 class TupleTest extends TermTestFoundation {
   final Term _s = TermFactory.createVar(TypeFactory.intSort);
@@ -165,8 +166,8 @@ class TupleTest extends TermTestFoundation {
     assertTrue(tuple.queryTupleArgument(2) == args.get(1));
     assertTrue(tuple.queryTupleArgument(3).queryTupleArgument(2).isVariable());
 
-    assertThrows(IndexingException.class, () -> tuple.queryArgument(1));
-    assertThrows(IndexingException.class, () -> tuple.queryMetaArgument(1));
+    assertThrows(IndexOutOfBoundsException.class, () -> tuple.queryArgument(1));
+    assertThrows(IndexOutOfBoundsException.class, () -> tuple.queryMetaArgument(1));
   }
 
   @Test
@@ -182,19 +183,19 @@ class TupleTest extends TermTestFoundation {
       () -> tp.queryVariable());
     assertThrows(InappropriatePatternDataException.class,
       () -> tp.queryMetaVariable());
-    assertThrows(ArityException.class,
+    assertThrows(TypingException.class,
       () -> x.apply(constantTerm("u", baseType("A"))));
   }
 
   @Test
-  public void testPositionsAndSubterms() throws CustomParserException {
+  public void testPositionsAndSubterms() throws PositionFormatException {
     Term tp = exampleTuple();
     assertTrue(tp.queryImmediateHeadSubterm(0) == tp);
-    assertThrows(IndexingException.class,
+    assertThrows(IndexOutOfBoundsException.class,
       () -> tp.queryImmediateHeadSubterm(1));
     List<Position> positions = tp.queryPositions(false);
     assertTrue(positions.toString().equals(
-      "[1.ε, 2.0.1.ε, 2.0.ε, 2.ε, 3.1.1.ε, 3.1.ε, 3.2.ε, 3.ε, ε]"));
+      "[1, 2.0.1, 2.0, 2, 3.1.1, 3.1, 3.2, 3, ε]"));
     assertTrue(tp.querySubterm(Position.parse("3.1")).toString().equals("f(a)"));
     assertTrue(tp.querySubterm(Position.parse("2.0*1")).toString().equals("f"));
     Term t = tp.replaceSubterm(positions.get(0), constantTerm("b", baseType("N")));
@@ -204,70 +205,26 @@ class TupleTest extends TermTestFoundation {
     assertTrue(t.toString().equals("⦇a, λx.f(x), ⦇Z(a), y⦈⦈"));
     assertThrows(TypingException.class,
       () -> tp.replaceSubterm(positions.get(0), constantTerm("b", baseType("A"))));
-    assertThrows(TypingException.class, () ->
-      tp.replaceSubterm(Position.parse("3.1*1"), new Var("Z", arrowType("N", "A"))));
   }
 
   @Test
   public void testBadPositions() {
     Term tup = exampleTuple();
-    assertThrows(IndexingException.class, () -> tup.querySubterm(Position.parse("4")));
-    assertThrows(IndexingException.class, () -> tup.querySubterm(Position.parse("3.3")));
-    assertThrows(IndexingException.class, () -> tup.querySubterm(Position.parse("3*1")));
-    assertThrows(IndexingException.class, () -> tup.querySubterm(Position.parse("*1")));
+    assertThrows(InvalidPositionException.class, () -> tup.querySubterm(Position.parse("4")));
+    assertThrows(InvalidPositionException.class, () -> tup.querySubterm(Position.parse("3.3")));
+    assertThrows(InvalidPositionException.class, () -> tup.querySubterm(Position.parse("3*1")));
+    assertThrows(InvalidPositionException.class, () -> tup.querySubterm(Position.parse("*1")));
     Term replacement = constantTerm("a", baseType("N"));
-    assertThrows(IndexingException.class,
+    assertThrows(InvalidPositionException.class,
       () -> tup.replaceSubterm(Position.parse("4"), replacement));
-    assertThrows(IndexingException.class,
+    assertThrows(InvalidPositionException.class,
       () -> tup.replaceSubterm(Position.parse("3.3"), replacement));
-    assertThrows(IndexingException.class,
+    assertThrows(InvalidPositionException.class,
       () -> tup.replaceSubterm(Position.parse("3*1"), replacement));
   }
 
   @Test
-  public void testSubstitution() {
-    Term s = exampleTuple();
-    Variable y = s.queryTupleArgument(3).queryTupleArgument(2).queryVariable();
-    Substitution gamma = new Subst(y, constantTerm("q", baseType("P")));
-    Term t = s.substitute(gamma);
-    assertTrue(s.toString().equals("⦇a, λx.f(x), ⦇f(a), y⦈⦈"));
-    assertTrue(t.toString().equals("⦇a, λx.f(x), ⦇f(a), q⦈⦈"));
-  }
-
-  @Test
-  public void testMatch() {
-    Variable x = new Var("X", baseType("A"));
-    Variable y = new Var("Y", baseType("A"));
-    Term tuple = new Tuple(x, y, x);
-
-    Term a = constantTerm("a", baseType("A"));
-    Term b = constantTerm("b", baseType("A"));
-    Term c = constantTerm("c", baseType("A"));
-    Substitution gamma;
-    Term m;
-
-    gamma = new Subst();
-    assertTrue(tuple.match(a, gamma).equals(
-      "a does not instantiate ⦇X, Y, X⦈ (not a tuple term)."));
-
-    m = new Tuple(a, new Tuple(b, a));
-    gamma = new Subst();
-    assertTrue(tuple.match(m, gamma).equals(
-      "⦇a, ⦇b, a⦈⦈ does not instantiate ⦇X, Y, X⦈ (mismatch on the tuple sizes)."));
-
-    m = new Tuple(a, b, c);
-    gamma = new Subst();
-    assertTrue(tuple.match(m, gamma).equals("Variable X mapped both to a and to c."));
-
-    m = new Tuple(a, b, a);
-    gamma = new Subst();
-    assertTrue(tuple.match(m, gamma) == null);
-    assertTrue(gamma.get(x) == a);
-    assertTrue(gamma.get(y) == b);
-  }
-
-  @Test
-  public void testEquality() throws CustomParserException {
+  public void testEquality() throws PositionFormatException {
     Term a = exampleTuple();
     Term b = exampleTuple();
     // note that creating a variable twice gives different variables

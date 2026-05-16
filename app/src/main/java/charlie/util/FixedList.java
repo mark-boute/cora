@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2024 Cynthia Kop
+ Copyright 2024--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,10 +15,10 @@
 
 package charlie.util;
 
-import charlie.exceptions.NullStorageException;
-
 import java.lang.Iterable;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.stream.Stream;
@@ -36,12 +36,12 @@ public class FixedList<T> implements Iterable<T> {
    * Private constructor, because we should only be created through the builder or the
    * dedicated static construction functions.
    */
-  FixedList(ArrayList<T> lst) {
+  private FixedList(ArrayList<T> lst) {
     _mylist = lst;
   }
 
-  /** Create a fixed copy of the given list */
-  public static <T> FixedList<T> copy(List<T> args) {
+  /** Create a fixed copy of the given collection */
+  public static <T> FixedList<T> copy(Collection<T> args) {
     if (args == null) throw new NullStorageException("FixedList", "list to be copied");
     final ArrayList<T> result = new ArrayList<T>(args.size());
     for (T x : args) {
@@ -51,23 +51,33 @@ public class FixedList<T> implements Iterable<T> {
     return new FixedList<T>(result);
   }
 
+  /** Create an empty FixedList */
   public static <T> FixedList<T>of() {
     return new FixedList<T>(new ArrayList<T>(0));
   }
+
+  /** Create a singleton FixedList */
   public static <T> FixedList<T> of(T arg1) {
     final ArrayList<T> result = new ArrayList<T>(1);
     if (arg1 == null) throw new NullStorageException("FixedList", "element in unary constructor");
     result.add(arg1);
     return new FixedList<T>(result);
   }
+
+  /** Create a binary FixedList */
   public static <T> FixedList<T> of(T arg1, T arg2) {
     final ArrayList<T> result = new ArrayList<T>(2);
-    if (arg1 == null) throw new NullStorageException("FixedList", "element 1 in biary constructor");
-    if (arg2 == null) throw new NullStorageException("FixedList", "element 2 in biary constructor");
+    if (arg1 == null) {
+      throw new NullStorageException("FixedList", "element 1 in binary constructor");
+    }
+    if (arg2 == null) {
+      throw new NullStorageException("FixedList", "element 2 in binary constructor");
+    }
     result.add(arg1);
     result.add(arg2);
     return new FixedList<T>(result);
   }
+  
   /** Create the list of a given (fixed) series of arguments */
   @SafeVarargs
   public static <T> FixedList<T>of(T ...args) {
@@ -84,9 +94,24 @@ public class FixedList<T> implements Iterable<T> {
   public T get(int index) { return _mylist.get(index); }
   public int hashCode() { return _mylist.hashCode(); }
   public boolean isEmpty() { return _mylist.isEmpty(); }
-  public Stream<T> parallelStream() { return _mylist.parallelStream(); }
+  public boolean contains(T elem) { return _mylist.contains(elem); }
   public int size() { return _mylist.size(); }
+  public Stream<T> parallelStream() { return _mylist.parallelStream(); }
   public Stream<T> stream() { return _mylist.stream(); }
+  public FixedList<T> append(FixedList<T> other) { return append(other._mylist); }
+  public HashSet<T> toSet() { return new HashSet<T>(_mylist); }
+  public String toString() { return _mylist.toString(); }
+
+  public FixedList<T> append(List<T> other) {
+    ArrayList<T> arr = new ArrayList<T>(_mylist);
+    arr.addAll(other);
+    return new FixedList<T>(arr);
+  }
+   public FixedList<T> append(T other) {
+    ArrayList<T> arr = new ArrayList<T>(_mylist);
+    arr.add(other);
+    return new FixedList<T>(arr);
+  }
   
   private class ImmutableIterator<T> implements Iterator<T> {
     Iterator<T> _mine;
@@ -103,7 +128,7 @@ public class FixedList<T> implements Iterable<T> {
     public Builder() { _internal = new ArrayList<T>(); }
     public Builder(int expectedSize) { _internal = new ArrayList<T>(expectedSize); }
     public void add(T element) {
-      if (_internal == null) { throw new RuntimeException("Using builder that was already built!"); }
+      if (_internal == null) throw new RuntimeException("Using builder that was already built!");
       if (element == null) throw new NullStorageException("FixedList", "element in builder");
       _internal.add(element);
     }

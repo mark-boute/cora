@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2024 Cynthia Kop
+ Copyright 2024--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,18 +15,18 @@
 
 package cora.termination.dependency_pairs.processors.graph;
 
-import charlie.exceptions.NullStorageException;
+import charlie.util.FixedList;
+import charlie.util.NullStorageException;
 import charlie.util.Pair;
 import charlie.types.TypeFactory;
 import charlie.terms.*;
+import charlie.substitution.MutableSubstitution;
 import charlie.trs.TrsProperties.*;
 import charlie.trs.Rule;
 import charlie.trs.TRS;
 import charlie.theorytranslation.TermAnalyser;
 import cora.config.Settings;
 import cora.termination.dependency_pairs.DP;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Set;
 import java.util.Stack;
 import java.util.TreeMap;
@@ -42,7 +42,7 @@ import java.util.TreeSet;
  */
 class ApproximateReducer {
   private TRS _coreTRS;
-  private List<Rule> _rules;
+  private FixedList<Rule> _rules;
 
   /**
    * Creates an ApproximateReducer assessment object that will use the given TRS both for term
@@ -58,7 +58,7 @@ class ApproximateReducer {
    * Creates an ApproximateReducer assessment object that will use the given TRS for term
    * formation and the given rules for reduction.
    */
-  public ApproximateReducer(TRS trs, List<Rule> rules) {
+  public ApproximateReducer(TRS trs, FixedList<Rule> rules) {
     if (trs == null) throw new NullStorageException("ApproximateReducer", "trs argument.");
     _coreTRS = trs;
     _rules = rules;
@@ -83,7 +83,7 @@ class ApproximateReducer {
    * purposes.)
    */
   static DP rename(DP dp) {
-    Substitution subst = TermFactory.createEmptySubstitution();
+    MutableSubstitution subst = new MutableSubstitution();
     for (Variable x : dp.lhs().vars()) {
       if (subst.get(x) == null) subst.extend(x, TermFactory.createVar(x.queryName(), x.queryType()));
     }
@@ -93,9 +93,9 @@ class ApproximateReducer {
     for (Variable x : dp.constraint().vars()) {
       if (subst.get(x) == null) subst.extend(x, TermFactory.createVar(x.queryName(), x.queryType()));
     }
-    Term newleft = dp.lhs().substitute(subst);
-    Term newright = dp.rhs().substitute(subst);
-    Term newconstraint = dp.constraint().substitute(subst);
+    Term newleft = subst.substitute(dp.lhs());
+    Term newright = subst.substitute(dp.rhs());
+    Term newconstraint = subst.substitute(dp.constraint());
 
     TreeSet<Variable> theory = new TreeSet<>();
     for (Variable x : dp.lvars()) {

@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2019--2024 Cynthia Kop
+ Copyright 2019--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -18,8 +18,8 @@ package charlie.parser;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
-import charlie.exceptions.ParseException;
 import charlie.util.LookupMap;
+import charlie.parser.lib.ParsingException;
 import charlie.parser.lib.ErrorCollector;
 import charlie.parser.Parser.*;
 
@@ -52,10 +52,10 @@ public class ITrsParserTest {
   public void testReadBooleanValue() {
     ParserTerm term = ITrsParser.readTerm("TRUE");
     assertTrue(term instanceof BoolVal);
-    assertTrue(term.toString().equals("⊤"));
+    assertTrue(term.toString().equals("TRUE"));
     term = ITrsParser.readTerm("FALSE");
     assertTrue(term instanceof BoolVal);
-    assertTrue(term.toString().equals("⊥"));
+    assertTrue(term.toString().equals("FALSE"));
   }
 
   @Test
@@ -109,7 +109,7 @@ public class ITrsParserTest {
   public void testReadMissingCloseBracket() {
     ErrorCollector collector = new ErrorCollector();
     ParserTerm term = ITrsParser.readTerm("f(a, b(x)", collector);
-    assertTrue(collector.queryCollectedMessages().equals(
+    assertTrue(collector.toString().equals(
       "1:10: Expected a comma or closing bracket but got end of input.\n"));
     assertTrue(term.hasErrors());
     assertTrue(term.toString().equals("ERR(@(f, [a, @(b, [x])]))"));
@@ -136,7 +136,7 @@ public class ITrsParserTest {
     ErrorCollector collector = new ErrorCollector();
     ParserTerm term = ITrsParser.readTerm("f(a, a(, x), g(y, ), a(b)", collector);
     assertTrue(collector.queryErrorCount() == 3);
-    assertTrue(collector.queryCollectedMessages().equals(
+    assertTrue(collector.toString().equals(
         "1:8: Expected an identifier (variable or function name) but got COMMA (,).\n" +
         "1:19: Expected an identifier (variable or function name) but got BRACKETCLOSE ()).\n" +
         "1:26: Expected a comma or closing bracket but got end of input.\n"));
@@ -149,14 +149,14 @@ public class ITrsParserTest {
     ParserRule rule = ITrsParser.readRule("f(x,s(y)) -> f(s(x + 1), y)", collector);
     assertTrue(collector.queryErrorCount() == 0);
     assertTrue(rule.toString().equals(
-      "{ [] } @(f, [x, @(s, [y])]) → @(f, [@(s, [@(+, [x, 1])]), y])"));
+      "{ [] } @(f, [x, @(s, [y])]) -> @(f, [@(s, [@(+, [x, 1])]), y])"));
   }
 
   @Test
   public void testReadAmbiguousTerm() {
     ErrorCollector collector = new ErrorCollector();
     ParserTerm term = ITrsParser.readTerm("x && y || z", collector);
-    assertTrue(collector.queryCollectedMessages().equals(
+    assertTrue(collector.toString().equals(
       "1:8: Ambiguous infix sequence: operators && (at position 1:3) and || " +
       "have the same precedence, but are not in the same group.  Please use " +
       "brackets to disambiguate.\n"));
@@ -168,7 +168,7 @@ public class ITrsParserTest {
     ErrorCollector collector = new ErrorCollector();
     ParserRule rule = ITrsParser.readRule("f(x,y) -> g(x / y) :|: y > 0", collector);
     assertTrue(collector.queryErrorCount() == 0);
-    assertTrue(rule.toString().equals("{ [] } @(f, [x, y]) → @(g, [@(/, [x, y])]) | @(>, [y, 0])"));
+    assertTrue(rule.toString().equals("{ [] } @(f, [x, y]) -> @(g, [@(/, [x, y])]) | @(>, [y, 0])"));
   }
 
   @Test
@@ -182,8 +182,8 @@ public class ITrsParserTest {
     assertTrue(trs.fundecs().size() == 0);
     assertTrue(trs.rules().size() == 2);
     assertTrue(trs.rules().get(0).vars().size() == 2);
-    assertTrue(trs.rules().get(0).toString().equals("{ [x, y] } @(f, [x, y, ⊤]) → " +
-      "@(f, [@(+, [y, x]), 12, ⊥])"));
+    assertTrue(trs.rules().get(0).toString().equals("{ [x, y] } @(f, [x, y, TRUE]) -> " +
+      "@(f, [@(+, [y, x]), 12, FALSE])"));
   }
 
   @Test
@@ -200,18 +200,18 @@ public class ITrsParserTest {
     assertTrue(trs.rules().size() == 3);
     assertTrue(trs.rules().get(0).vars().size() == 1);
     assertTrue(trs.rules().get(0).toString().equals(
-      "{ [x] } @(sum, [x]) → @(+, [x, @(sum, [@(-, [x, 1])])]) | @(>, [x, 0])"));
+      "{ [x] } @(sum, [x]) -> @(+, [x, @(sum, [@(-, [x, 1])])]) | @(>, [x, 0])"));
     assertTrue(trs.rules().get(1).toString().equals(
-      "{ [x] } @(sum, [0]) → 0"));
+      "{ [x] } @(sum, [0]) -> 0"));
     assertTrue(trs.rules().get(2).toString().equals(
-      "{ [x] } @(sum, [x]) → @(-, [1]) | @(<, [x, 0])"));
+      "{ [x] } @(sum, [x]) -> @(-, [1]) | @(<, [x, 0])"));
   }
 
   @Test
   public void testMissingRules() {
     String str = "(VAR x y) (COMMENT an empty file)";
     try { ITrsParser.readProgramFromString(str); }
-    catch (ParseException e) {
+    catch (ParsingException e) {
       assertTrue(e.getMessage().equals(
         "1:11: Expected rules declaration but got COMMENTSTART ((COMMENT).\n"));
       return;

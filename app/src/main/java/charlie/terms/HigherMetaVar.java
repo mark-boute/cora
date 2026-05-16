@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,24 +15,25 @@
 
 package charlie.terms;
 
-import com.google.common.collect.ImmutableList;
-import charlie.exceptions.IndexingException;
-import charlie.exceptions.NullStorageException;
+import java.util.ArrayList;
+import charlie.util.FixedList;
+import charlie.util.NullStorageException;
 import charlie.types.Type;
 import charlie.types.TypeFactory;
+import charlie.terms.replaceable.Replaceable;
 
 /**
  * This class is for Meta-variables of higher type; that is, arity ≥ 1.
  */
-class HigherMetaVar implements MetaVariable {
+final class HigherMetaVar implements MetaVariable {
   private static int _COUNTER = 0;
   private final String _name;
-  private final ImmutableList<Type> _inputs;
+  private final FixedList<Type> _inputs;
   private final Type _output;
   private final int _index;
   private Type _mytype;
 
-  HigherMetaVar(String name, ImmutableList<Type> inputs, Type output) {
+  HigherMetaVar(String name, FixedList<Type> inputs, Type output) {
     _name = name;
     _inputs = inputs;
     _output = output;
@@ -63,13 +64,14 @@ class HigherMetaVar implements MetaVariable {
     return _inputs.size();
   }
 
-  public int queryReplaceableKind() {
-    return Replaceable.KIND_METAVAR;
+  public Kind queryReplaceableKind() {
+    return Replaceable.Kind.METAVAR;
   }
 
   public Type queryInputType(int i) {
     if (i <= 0 || i > _inputs.size()) {
-      throw new IndexingException("HigherMetaVar", "queryInputType", i, 1, _inputs.size());
+      throw new IndexOutOfBoundsException("HigherMetaVar::queryInputType(" + i + ") called on " +
+        "meta-variable with arity " + _inputs.size() + ".");
     }
     return _inputs.get(i-1);
   }
@@ -82,9 +84,21 @@ class HigherMetaVar implements MetaVariable {
     return _mytype;
   }
 
+  public Term makeTerm() {
+    ArrayList<Term> args = new ArrayList<Term>();
+    for (int i = 0; i < _inputs.size(); i++) {
+      args.add(new Binder("b" + (i+1), _inputs.get(i)));
+    }
+    Term ret = new MetaApplication(this, args);
+    for (int i = args.size()-1; i >= 0; i--) {
+      ret = new Abstraction(args.get(i).queryVariable(), ret);
+    }
+    return ret;
+  }
+
   public int compareTo(Replaceable other) {
     if (other == this) return 0;    // shortcut
-    int d = other.queryReplaceableKind() - queryReplaceableKind();
+    int d = other.queryReplaceableKind().compareTo(queryReplaceableKind());
     if (d != 0) return d;
     d = _index - other.queryIndex();
     if (d != 0) return d;

@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2023--2024 Cynthia Kop
+ Copyright 2023--2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -15,10 +15,10 @@
 
 package charlie.parser;
 
-import com.google.common.collect.ImmutableList;
 import java.io.IOException;
 import java.util.ArrayList;
 
+import charlie.util.FixedList;
 import charlie.util.LookupMap;
 import charlie.types.*;
 import charlie.parser.lib.*;
@@ -29,6 +29,8 @@ import charlie.parser.Parser.*;
  * The CoraParser parses the main Cora input format -- both for the unconstrained basic formalisms
  * (which do not have any theory symbols), and the constrained ones (which currently include all
  * the standard formalisms).
+ *
+ * Note that if the parser is altered, the corresponding reader must be altered accordingly!
  */
 public class CoraParser {
   public static final String PLUS = "+";
@@ -163,6 +165,60 @@ public class CoraParser {
     return TypeFactory.createProduct(components);
   }
 
+  // ================================= READING INDIVIDUAL SYMBOLS =================================
+
+  /**
+   * singlesymbol = value
+   *              | infixsymbol (or NOT)
+   *              | NOT
+   *              | IDENTIFIER
+   *              | METAOPEN infixsymbol METACLOSE
+   * 
+   * Note that reading individual symbols is not needed for parsing a TRS, but may be useful for
+   * other applications (there is a static access function for this method).
+   */
+  private ParserTerm readSingleSymbol() {
+    Token token;
+
+    // value
+    if (_status.nextTokenIs(CoraTokenData.STRING) || _status.nextTokenIs(CoraTokenData.INTEGER) ||
+        _status.nextTokenIs(CoraTokenData.TRUE) || _status.nextTokenIs(CoraTokenData.FALSE)) {
+      return readValue();
+    }
+
+    // infixsymbol
+    OperatorData data = tryReadInfixSymbol();
+    if (data != null) return new CalcSymbol(data.token(), data.name());
+
+    // NOT
+    token = _status.readNextIf(CoraTokenData.NOT);
+    if (token != null) return new CalcSymbol(token, NOT);
+
+    // METAOPEN infixsymbol METACLOSE
+    if (_status.readNextIf(CoraTokenData.METAOPEN) != null) {
+      token = _status.peekNext();
+      data = tryReadInfixSymbol();
+      if (data == null && _status.readNextIf(CoraTokenData.NOT) != null) {
+        data = new OperatorData(token, NOT);
+      }
+      if (data == null) {
+        _status.storeError(token, "Expected infix symbol but got " + token.getName() + " (" +
+          token.getText() + ")");
+        ParserTerm ret = new PErr(new Identifier(token, token.getText()));
+        _status.nextToken();
+        return ret;
+      }
+      _status.expect(CoraTokenData.METACLOSE, "infix closing bracket ]");
+      return new CalcSymbol(data.token(), data.name());
+    }
+
+    // IDENTIFIER
+    token = _status.expect(CoraTokenData.IDENTIFIER, "function symbol (or variable) name");
+    if (token == null) return new PErr(new Identifier(_status.nextToken(), "UNKNOWN"));
+    return new Identifier(token, token.getText());
+  }
+
+
   // ======================================== READING TERMS =======================================
 
   /**
@@ -217,7 +273,7 @@ public class CoraParser {
     if ((token = _status.readNextIf(CoraTokenData.NOT)) != null) {
       ParserTerm child = readMainTerm();
       if (child == null) return new CalcSymbol(token, NOT);
-      return new Application(token, new CalcSymbol(token, NOT), ImmutableList.of(child));
+      return new Application(token, new CalcSymbol(token, NOT), FixedList.of(child));
     }
 
     // MINUS mainterm
@@ -225,7 +281,7 @@ public class CoraParser {
       ParserTerm child = readMainTerm();
       if (child == null) return new CalcSymbol(token, MINUS);
       if (child instanceof IntVal(Token t, int v)) return new IntVal(token, -v);
-      return new Application(token, new CalcSymbol(token, MINUS), ImmutableList.of(child));
+      return new Application(token, new CalcSymbol(token, MINUS), FixedList.of(child));
     }
 
     // value
@@ -253,8 +309,8 @@ public class CoraParser {
         data = new OperatorData(token, NOT);
       }
       if (data == null) {
-        _status.storeError("Expected infix symbol but got " + token.getName() + " (" +
-          token.getText() + ")", token);
+        _status.storeError(token, "Expected infix symbol but got " + token.getName() + " (" +
+          token.getText() + ")");
         ret = new PErr(new Identifier(token, token.getText()));
         _status.nextToken();
       }
@@ -267,14 +323,14 @@ public class CoraParser {
 
     // TUPLEOPEN termlist TUPLECLOSE
     else if ((token = _status.readNextIf(CoraTokenData.TUPLEOPEN)) != null) {
-      ImmutableList<ParserTerm> args =
-        readTermList(CoraTokenData.TUPLECLOSE, "tuple closing bracket ⦈");
+      FixedList<ParserTerm> args =
+        readTermList(CoraTokenData.TUPLECLOSE, "tuple closing bracket |)");
       if (args == null || args.size() == 0) {
-        ret = new PErr(new Identifier(token, "⦇⦈"));
-        if (args != null) _status.storeError("Empty tuples are not allowed.", token);
+        ret = new PErr(new Identifier(token, "(| |)"));
+        if (args != null) _status.storeError(token, "Empty tuples are not allowed.");
       }
       else if (args.size() == 1) {
-        _status.storeError("Tuples of length 1 are not allowed.", token);
+        _status.storeError(token, "Tuples of length 1 are not allowed.");
         ret = args.get(0);
       }
       else ret = new Tup(token, args);
@@ -283,14 +339,14 @@ public class CoraParser {
     // IDENTIFIER
     else {
       token = _status.expect(CoraTokenData.IDENTIFIER, "term, started by an identifier, " +
-        "λ, string or (,");
+        "LAMBDA, string or (,");
       if (token == null) return null;
       Token next;
       // IDENTIFIER METAOPEN termlist METACLOSE
       if ((next = _status.readNextIf(CoraTokenData.METAOPEN)) != null) {
-        ImmutableList<ParserTerm> args = readTermList(CoraTokenData.METACLOSE,
-          "meta-closing bracket " + (next.getText().equals("[") ? "]" : "⟩"));
-        if (args == null) ret = new PErr(new Meta(token, token.getText(), ImmutableList.of()));
+        FixedList<ParserTerm> args = readTermList(CoraTokenData.METACLOSE,
+          "meta-closing bracket " + (next.getText().equals("⟨") ? "⟩" : "]"));
+        if (args == null) ret = new PErr(new Meta(token, token.getText(), FixedList.of()));
         else ret = new Meta(token, token.getText(), args);
       }
       // just IDENTIFIER (so a function symbol or variable)
@@ -299,7 +355,7 @@ public class CoraParser {
 
     // if we see an argument list, read it, and make the application structure
     while (_status.readNextIf(CoraTokenData.BRACKETOPEN) != null) {
-      ImmutableList<ParserTerm> args = readTermList(CoraTokenData.BRACKETCLOSE,"closing bracket )");
+      FixedList<ParserTerm> args = readTermList(CoraTokenData.BRACKETCLOSE,"closing bracket )");
       if (args == null) ret = new PErr(ret);
       else ret = new Application(ret.token(), ret, args);
     }
@@ -316,7 +372,7 @@ public class CoraParser {
    */
   private ParserTerm readAbstraction() {
     // read λ
-    if (_status.expect(CoraTokenData.LAMBDA, "a λ") == null) return null;
+    if (_status.expect(CoraTokenData.LAMBDA, "a LAMBDA") == null) return null;
     boolean errored = false;
 
     // read every (name,type) combination into (variables,type); when type is not given, this
@@ -381,12 +437,12 @@ public class CoraParser {
         return new IntVal(token, number);
       }
       catch (NumberFormatException e) {
-        _status.storeError("Cannot parse integer constant: " + token.getText(), token);
+        _status.storeError(token, "Cannot parse integer constant: " + token.getText());
         return new Identifier(token, token.getText());
       }
     }
     if (!token.getName().equals(CoraTokenData.STRING)) {
-      throw new Error("Calling readValueStructure when it shouldn't be.");
+      throw new RuntimeException("Calling readValue when it shouldn't be.");
     }
     // take the token's text without the closing "
     StringBuilder text =
@@ -404,11 +460,11 @@ public class CoraParser {
   /**
    * termlist ::= ε [followName] | term (COMMA term)* [followName]
    *
-   * The terms are returned as an ImmutableList.
+   * The terms are returned as a FixedList.
    */
-  private ImmutableList<ParserTerm> readTermList(String followName, String followDescription) {
+  private FixedList<ParserTerm> readTermList(String followName, String followDescription) {
     // handle the case ε [followName]
-    if (_status.readNextIf(followName) != null) return ImmutableList.of();
+    if (_status.readNextIf(followName) != null) return FixedList.of();
 
     Token token;
     ArrayList<ParserTerm> ret = new ArrayList<ParserTerm>();
@@ -418,7 +474,7 @@ public class CoraParser {
     while (true) {
       // appropriate error handling if we see commas where there shouldn't be
       if ((token = _status.readNextIf(CoraTokenData.COMMA)) != null) {
-        _status.storeError("Unexpected comma; expected term or " + followDescription, token);
+        _status.storeError(token, "Unexpected comma; expected term or " + followDescription);
         errored = true;
         while (_status.readNextIf(CoraTokenData.COMMA) != null);
       }
@@ -440,7 +496,7 @@ public class CoraParser {
       if (ret.size() == 0) return null;
       ret.set(ret.size()-1, new PErr(ret.get(ret.size()-1)));
     }
-    return ImmutableList.copyOf(ret);
+    return FixedList.copy(ret);
   }
 
   /**
@@ -506,8 +562,8 @@ public class CoraParser {
         String name = decl.name();
         if (ret.containsKey(name)) {
           String kind = decl.extra() == 0 ? "variable" : "meta-variable";
-          _status.storeError("Redeclaration of " + (decl.extra() == 0 ? "variable " :
-           "meta-variable ") + name + " in the same environment.", decl.token());
+          _status.storeError(decl.token(), "Redeclaration of " + (decl.extra() == 0 ? "variable " :
+           "meta-variable ") + name + " in the same environment.");
         }
         else ret.put(decl.name(), decl);
       }
@@ -544,7 +600,7 @@ public class CoraParser {
           }
         }
       }
-      _status.expect(CoraTokenData.ARROW, "arrow operator →");
+      _status.expect(CoraTokenData.ARROW, "arrow operator ->");
     }
     else _status.readNextIf(CoraTokenData.ARROW);
 
@@ -702,8 +758,8 @@ public class CoraParser {
     // error cases: this is actually a variable / meta-variable declaration!
     if (_status.nextTokenIs(CoraTokenData.BRACECLOSE)) {
       if (publ != null || priv != null) {
-        _status.storeError("Function symbol declartion cannot be followed by }!",
-                           _status.peekNext());
+        _status.storeError(_status.peekNext(),
+                           "Function symbol declartion cannot be followed by }!");
       }
       return new ParserDeclaration(constant, name, null);
     }
@@ -711,9 +767,8 @@ public class CoraParser {
         type == null) {
       if (publ != null || priv != null) {
         Token tok = _status.peekNext();
-        _status.storeError("Function symbol declartion cannot be followed by " +
-                           (tok.getName().equals(CoraTokenData.COMMA) ? "comma" : "dot") + "!",
-                           _status.peekNext());
+        _status.storeError(_status.peekNext(), "Function symbol declartion cannot be followed by " +
+                           (tok.getName().equals(CoraTokenData.COMMA) ? "comma" : "dot") + "!");
       }
       recoverState();
       return new ParserDeclaration(constant, name, null);
@@ -724,7 +779,7 @@ public class CoraParser {
 
   private ParserProgram readTRS() {
     LookupMap.Builder<ParserDeclaration> symbols = new LookupMap.Builder<ParserDeclaration>();
-    ImmutableList.Builder<ParserRule> rules = ImmutableList.<ParserRule>builder();
+    FixedList.Builder<ParserRule> rules = new FixedList.Builder<ParserRule>();
     while (!_status.peekNext().isEof()) {
       ParserDeclaration decl = tryReadDeclaration();
       if (decl == null) {
@@ -733,8 +788,8 @@ public class CoraParser {
       }
       else if (decl.type() != null) {
         if (symbols.containsKey(decl.name())) {
-          _status.storeError("Redeclaration of previously declared function symbol " + decl.name() +
-            ".", decl.token());
+          _status.storeError(decl.token(), "Redeclaration of previously declared function symbol " +
+            decl.name() + ".");
         }
         else symbols.put(decl.name(), decl);
       }
@@ -745,9 +800,10 @@ public class CoraParser {
   // ====================================== PUBLIC FUNCTIONS ======================================
 
   /**
-   * Helper function: creates a status to read the given string and store errors in the given
+   * This helper function creates a status to read the given string and store errors in the given
    * collector, which may be null (in which case errors are stored in a fresh collector in the
-   * status).
+   * status).  If "constrained" is true, then integers, strings, infix symbols etc. will be
+   * recognised; otherwise they will not be.
    */
   private static ParsingStatus makeStatus(String str, boolean constrained,
                                           ErrorCollector collector) {
@@ -770,7 +826,7 @@ public class CoraParser {
    * sorts, and identifiers are restricted as they are when reading a constrained TRS (e.g., sort
    * names may not contain "+").  If it is set to false, then identifiers are more general and
    * the pre-defined types will not be marked as theory sorts.
-   * @throws charlie.exceptions.ParseException
+   * @throws ParsingException
    */
   public static Type readType(String str, boolean constrainedTRS, ErrorCollector collector) {
     ParsingStatus status = makeStatus(str, constrainedTRS, collector);
@@ -784,7 +840,22 @@ public class CoraParser {
    * Reads the given type from string, recognising the pre-defined sorts.
    * This is the same as readTypeFromString(true, null).
    */
-   public static Type readType(String str) { return readType(str, true, null); }
+  public static Type readType(String str) { return readType(str, true, null); }
+
+  /**
+   * This function takes a given parsing status, reads a type from it (reading as far as we can;
+   * if an unexpected symbol is encountered after a type we stop, but we DO NOT BACKTRACK), and
+   * returns the result.
+   * The ParsingStatus is advanced to point just after the type that was read.
+   * This may cause a ParsingException to be thrown, or for errors to be stored in the status (call
+   * status.throwCollectedErrors() to ensure that stored errors are thrown).
+   *
+   * @throws ParsingException
+   */
+  public static Type readType(ParsingStatus status) {
+    CoraParser parser = new CoraParser(status);
+    return parser.readType();
+  }
 
   /**
    * Reads a term from the given string.
@@ -792,9 +863,9 @@ public class CoraParser {
    * parsed accordingly; if not, these are just identifiers.
    * The error collector is allowed to be null.  If an error collector is given, then parsing tries
    * error recovery, and stores its erorrs in the given collector; only if parsing really fails is
-   * an error thrown.  If the given collector is null, any error causes a ParseException to be
-   * thrown (although we still try to collect all relevant errors in the same ParseException).
-   * @throws charlie.exceptions.ParseException
+   * an error thrown.  If the given collector is null, any error causes a ParsingException to be
+   * thrown (although we still try to collect all relevant errors in the same ParsingException).
+   * @throws ParsingException
    */
   public static ParserTerm readTerm(String str, boolean constrainedTRS, ErrorCollector collector) {
     ParsingStatus status = makeStatus(str, constrainedTRS, collector);
@@ -805,8 +876,42 @@ public class CoraParser {
   }
 
   /**
+   * This function takes a given parsing status, reads a term from it (reading as far as we can;
+   * if an unexpected symbol is encountered after a type we stop, but we DO NOT BACKTRACK), and
+   * returns the result.
+   * The ParsingStatus is advanced to point just after the term that was read.
+   * This may cause a ParsingException to be thrown, or for errors to be stored in the status (call
+   * status.throwCollectedErrors() to ensure that stored errors are thrown).
+   *
+   * @throws ParsingException
+   */
+  public static ParserTerm readTerm(ParsingStatus status) {
+    CoraParser parser = new CoraParser(status);
+    return parser.readTerm();
+  }
+
+  /**
+   * This function reads a single function symbol from the given parsing status, which could be an
+   * identifier, value or calculation symbol.  The ParsingStatus is advanced to the point just after
+   * the symbol.
+   */
+  public static ParserTerm readSingleSymbol(ParsingStatus status) {
+    CoraParser parser = new CoraParser(status);
+    return parser.readSingleSymbol();
+  }
+
+  /**
+   * This function reads an environment from the given parsing status, and returns the declarations
+   * that occur in it.  The ParsingStatus is advanced to the point just after the environment.
+   */
+  public static LookupMap<ParserDeclaration> readEnvironment(ParsingStatus status) {
+    CoraParser parser = new CoraParser(status);
+    return parser.readEnvironment();
+  }
+
+  /**
    * Reads a rule from the given string.
-   * @throws charlie.exceptions.ParseException
+   * @throws ParsingException
    */
   public static ParserRule readRule(String str, boolean constrained, ErrorCollector collector) {
     ParsingStatus status = makeStatus(str, constrained, collector);
@@ -825,7 +930,7 @@ public class CoraParser {
    * - a ParserDeclaration with type() null: if something was read, but an error occurred
    * - a valid ParserDeclaration: if the declaration was read
    *   if the declaration is private, moreover the extra() field is 1; otherwise it is 0.
-   * @throws charlie.exceptions.ParseException
+   * @throws ParsingException
    */
   public static ParserDeclaration readDeclaration(String str, boolean constrained,
                                                   ErrorCollector collector) {
@@ -854,7 +959,7 @@ public class CoraParser {
 
   /**
    * Reads a full TRS, in the expected format for the current parser, from the given file.
-   * @throws charlie.exceptions.ParseException
+   * @throws ParsingException
    */
   public static ParserProgram readProgramFromFile(String filename, boolean constrained,
                                                   ErrorCollector collector) throws IOException {

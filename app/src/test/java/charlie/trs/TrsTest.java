@@ -1,5 +1,5 @@
 /**************************************************************************************************
- Copyright 2024 Cynthia Kop
+ Copyright 2024, 2025 Cynthia Kop
 
  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  in compliance with the License.
@@ -25,14 +25,14 @@ import java.util.TreeSet;
 
 import charlie.types.Type;
 import charlie.types.TypeFactory;
-import charlie.parser.CoraParser;
 import charlie.terms.*;
 import charlie.trs.TrsProperties.*;
 import charlie.trs.TRS.RuleScheme;
+import charlie.reader.CoraInputReader;
 
 public class TrsTest {
   private Type type(String txt) {
-    try { return CoraParser.readType(txt); }
+    try { return CoraInputReader.readType(txt); }
     catch (Exception e) { System.out.println(e); return null; }
   }
 
@@ -300,6 +300,81 @@ public class TrsTest {
     rules.add(TrsFactory.createRule(left, a));  // g(y+y) -> A
     trs = TrsFactory.createTrs(alf, rules, TrsFactory.LCSTRS);
     assertFalse(trs.isLeftLinear());
+  }
+
+  @Test
+  public void testQueryRulesForSymbolFact() {
+    TRS trs = CoraInputReader.readTrsFromString(
+      "fact :: Int -> (Int -> o) -> o\n" +
+      "comp :: (Int -> o) -> (Int -> Int) -> Int -> o\n" +
+      "fact(n, k) -> k(1) | n <= 0\n" +
+      "fact(n, k) -> fact(n - 1, comp(k, [*](n))) | n > 0\n" +
+      "comp(g, f, x) -> g(f(x))\n");
+    FunctionSymbol fact = makeConstant("fact", "Int -> (Int -> o) -> o");
+    List<Rule> factRules = trs.queryRulesForSymbol(fact, false).toList();
+    assertEquals(2, factRules.size());
+    assertTrue(factRules.stream().allMatch(r -> fact.equals(r.queryRoot())));
+
+    FunctionSymbol comp = makeConstant("comp", "(Int -> o) -> (Int -> Int) -> Int -> o");
+    List<Rule> compRules = trs.queryRulesForSymbol(comp, true).toList();
+    assertEquals(1, compRules.size());
+    assertTrue(compRules.stream().allMatch(r -> comp.equals(r.queryRoot())));
+
+    FunctionSymbol udef = makeConstant("udef", "o");
+    assertEquals(0, trs.queryRulesForSymbol(udef, false).count());
+  }
+
+  @Test
+  public void testQueryRulesForSymbolVarHead() {
+    TRS trs = CoraInputReader.readTrsFromString(
+      "{ F :: a -> a } F(x) -> x\n" +
+      "{ G :: b -> a -> a } G(x, y) -> y\n");
+    FunctionSymbol f = makeConstant("f", "a -> a");
+    List<Rule> fVarRules = trs.queryRulesForSymbol(f, true).toList();
+    assertEquals(1, fVarRules.size());
+    assertTrue(fVarRules.stream().allMatch(
+      r -> r.queryLeftSide().queryHead().queryType().equals(type("a → a"))));
+
+    FunctionSymbol fg = makeConstant("fg", "c -> b -> a -> a");
+    assertEquals(2, trs.queryRulesForSymbol(fg, true).count());
+    assertEquals(0, trs.queryRulesForSymbol(fg, false).count());
+
+    FunctionSymbol h = makeConstant("h", "b -> a -> b");
+    assertEquals(0, trs.queryRulesForSymbol(h, true).count());
+
+    FunctionSymbol i = makeConstant("i", "a");
+    assertEquals(0, trs.queryRulesForSymbol(i, true).count());
+  }
+
+  @Test
+  public void testRuleArity() {
+    TRS trs = CoraInputReader.readTrsFromString(
+      "fact :: Int -> (Int -> o) -> o\n" +
+      "comp :: (Int -> o) -> (Int -> Int) -> Int -> o\n" +
+      "fact(n, k) -> k(1) | n <= 0\n" +
+      "fact(n, k) -> fact(n - 1, comp(k, [*](n))) | n > 0\n" +
+      "comp(g, f, x) -> g(f(x))\n" +
+      "error :: Int\n" +
+      "[+](error, y) -> error()\n" +
+      "[*](error) -> [+](error)\n" +
+      "s :: Nat -> Nat\n" +
+      "nul :: Nat\n" +
+      "id :: Nat -> Nat\n" +
+      "id(n) -> n\n" +
+      "add :: Nat -> Nat -> Nat\n" +
+      "add(s(x), y) -> add(x, s(y))\n" +
+      "add(nul) -> id\n"
+    );
+    Alphabet alf = trs.queryAlphabet();
+    assertTrue(trs.queryRuleArity(alf.lookup("fact")) == 2);
+    assertTrue(trs.queryRuleArity(alf.lookup("comp")) == 3);
+    assertTrue(trs.queryRuleArity(alf.lookup("error")) == 0);
+    assertTrue(trs.queryRuleArity(alf.lookup("s")) == 0);
+    assertTrue(trs.queryRuleArity(alf.lookup("id")) == 1);
+    assertTrue(trs.queryRuleArity(alf.lookup("add")) == -1);
+    assertTrue(trs.queryRuleArity(TheoryFactory.plusSymbol) == 2);
+    assertTrue(trs.queryRuleArity(TheoryFactory.minusSymbol) == 1);
+    assertTrue(trs.queryRuleArity(TheoryFactory.timesSymbol) == -1);
   }
 }
 
