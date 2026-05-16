@@ -13,7 +13,7 @@ run_file() {
     printf "${BLUE_BOLD}Running:${NC} %s\n" "$1"
     
     start=$(date +%s%3N)
-    output=$(gradle run -q --args="../$1")
+    output=$(gradle run --args="../$1")
     end=$(date +%s%3N)
     printf "%s\n" "$output"
     result=$(echo "$output" | head -n 1)
