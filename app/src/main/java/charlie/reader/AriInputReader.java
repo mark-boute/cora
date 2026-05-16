@@ -175,7 +175,13 @@ public class AriInputReader extends TermTyper {
       if (r != null) rules.add(r);
     }   
     Alphabet alphabet = _symbols.queryCurrentAlphabet();
-    try { return TrsFactory.createTrs(alphabet, rules, TrsFactory.AMS); }
+    TrsFactory.TrsKind kind = switch (trs.format()) {
+      case MSTRS -> TrsFactory.MSTRS;
+      case LCTRS -> TrsFactory.LCTRS;
+      case LCSTRS -> TrsFactory.LCSTRS;
+      default -> TrsFactory.AMS;
+    };
+    try { return TrsFactory.createTrs(alphabet, rules, kind); }
     catch (IllegalRuleException e) {
       storeError(null, e.getMessage());
       return null;

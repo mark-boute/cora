@@ -226,7 +226,7 @@ public class OCocoParser extends FirstOrderParser implements Parser {
     if (funs == null) funs = LookupMap.<ParserDeclaration>empty();
     FixedList<ParserRule> rules = readRules(vars);
     if (!readComment()) _status.expect(Token.EOF, "end of input");
-    return new ParserProgram(funs, rules);
+    return new ParserProgram(funs, rules, TrsFormat.MSTRS);
   }
 
   // ====================================== PUBLIC FUNCTIONS ======================================

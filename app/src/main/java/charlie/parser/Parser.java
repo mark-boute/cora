@@ -133,12 +133,15 @@ public interface Parser {
     }
   }
 
+  public enum TrsFormat { AMS, MSTRS, LCTRS, LCSTRS, UNKNOWN };
+
   /**
    * A "program" essentially defines a TRS, except it is not yet typed.  It consists of a number of
    * function symbol declarations, a number of rules, and a set of "private" symbols (all others
    * are public).
    */
   public record ParserProgram(LookupMap<ParserDeclaration> fundecs,
-                              FixedList<ParserRule> rules) {}
+                              FixedList<ParserRule> rules,
+                              TrsFormat format) {}
 }
 

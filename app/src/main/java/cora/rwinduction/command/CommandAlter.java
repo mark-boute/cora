@@ -30,6 +30,7 @@ import cora.rwinduction.engine.DeductionStep;
 import cora.rwinduction.engine.VariableNamer;
 import cora.rwinduction.engine.deduction.DeductionAlterConstraint;
 import cora.rwinduction.engine.deduction.DeductionAlterDefinitions;
+import cora.rwinduction.engine.deduction.DeductionAlterObserve;
 import cora.rwinduction.engine.deduction.DeductionAlterRename;
 import cora.rwinduction.parser.CommandParsingStatus;
 
@@ -44,6 +45,7 @@ public class CommandAlter extends DeductionCommand {
   public FixedList<String> callDescriptor() {
     return FixedList.of("alter add <var> = <term> , ..., <var> = <term>",
                         "alter rename <name> := <newname> , ... , <name> := <newname>",
+                        "alter observe <var> = <term>",
                         "alter constraint <constraint>");
   }
   
@@ -58,6 +60,8 @@ public class CommandAlter extends DeductionCommand {
       "been introduced by definition to the left.");
     module.println("For ALTER RENAME, note that the new names you introduce should not occur " +
       "in the bounding terms either!");
+    module.println("For ALTER OBSERVE, the term should be a variable or value which, according " +
+      "to the constraint, is equal to the given variable.");
     module.println("For ALTER CONSTRAINT, the new constraint should be equivalent to the " +
       "original one. No fresh variables are allowed to occur in it (but you can add variables " +
       "that occur only in the body of the equation context, not yet the constraint).");
@@ -72,6 +76,7 @@ public class CommandAlter extends DeductionCommand {
     }
     if (action.equals("add")) return createAddStep(input);
     if (action.equals("rename")) return createRenameStep(input);
+    if (action.equals("observe")) return createObserveStep(input);
     if (action.equals("constraint")) return createConstraintStep(input);
     _module.println("Unknown action for alter: %a.", action);
     return null;
@@ -138,6 +143,25 @@ public class CommandAlter extends DeductionCommand {
     return DeductionAlterRename.createStep(_proof, om, names);
   }
 
+  /** Handle an alter observe command */
+  DeductionAlterObserve createObserveStep(CommandParsingStatus input) {
+    Optional<OutputModule> om = optionalModule();
+    Renaming renaming = _proof.getProofState().getTopEquation().getRenaming();
+    String originalname = input.readIdentifier(om, "existing variable name");
+    if (originalname == null) return null;
+    Variable original = null;
+    if (renaming.getReplaceable(originalname) != null &&
+        renaming.getReplaceable(originalname) instanceof Variable o) original = o;
+    else {
+      _module.println("No such variable: %a.", originalname);
+      return null;
+    }
+    if (!input.expect("=", om)) return null;
+    Term replacement = input.readTerm(_proof.getContext().getTRS(), renaming, _module);
+    if (replacement == null) return null;
+    return DeductionAlterObserve.createStep(_proof, om, original, replacement);
+  }
+
   /** Handle an alter constraint command */
   DeductionAlterConstraint createConstraintStep(CommandParsingStatus input) {
     Term constraint = input.readTerm(_proof.getContext().getTRS(),
@@ -154,12 +178,14 @@ public class CommandAlter extends DeductionCommand {
     if (status.commandEnded()) {
       ret.add(new TabSuggestion("add", "keyword"));
       ret.add(new TabSuggestion("rename", "keyword"));
+      ret.add(new TabSuggestion("observe", "keyword"));
       ret.add(new TabSuggestion("constraint", "keyword"));
       return ret;
     }
     String w = status.nextWord();
     if (w.equals("add")) addAddSuggestions(status, ret);
     else if (w.equals("rename")) addRenameSuggestions(status, ret);
+    else if (w.equals("observe")) addObserveSuggestions(status, ret);
     else if (w.equals("constraint")) addConstraintSuggestions(status, ret);
     return ret;
   }
@@ -234,6 +260,62 @@ public class CommandAlter extends DeductionCommand {
     }
   }
 
+  /** Tab suggestions once "alter observe" has been read. */
+  private void addObserveSuggestions(CommandParsingStatus status, ArrayList<TabSuggestion> ret) {
+    Optional<OutputModule> empty = Optional.empty();
+    if (status.commandEnded()) {
+      addVariableSuggestions(ret);
+      return;
+    }
+    String originalname = status.readIdentifier(empty, "existing variable name");
+    if (status.commandEnded()) {
+      ret.add(new TabSuggestion("=", "keyword"));
+      return;
+    }
+    if (!status.expect("=", empty)) return;
+    if (status.commandEnded()) {
+      addVariableReplacementSuggestions(originalname, ret);
+      ret.add(new TabSuggestion(null, "value"));
+      return;
+    }
+    ret.add(endOfCommandSuggestion());
+  }
+
+  /**
+   * Helper function for alter observe: this adds possible variables to ret that occur in left-
+   * or right-hand side of the current equation, and which have a theory sort for a type.
+   */
+  private void addVariableSuggestions(ArrayList<TabSuggestion> ret) {
+    Renaming renaming = _proof.getProofState().getTopEquation().getRenaming();
+    Term left = _proof.getProofState().getTopEquation().getLhs();
+    Term right = _proof.getProofState().getTopEquation().getRhs();
+    for (String name : renaming.range()) {
+      var x = renaming.getReplaceable(name);
+      if (left.freeReplaceables().contains(x) || right.freeReplaceables().contains(x)) {
+        if (x.queryType().isTheoryType() && x.queryType().isBaseType()) {
+          ret.add(new TabSuggestion(name, "existing theory variable"));
+        }
+      }
+    }
+  }
+
+  /**
+   * Helper function for alter observe: this adds possible variable suggestions of the same type as
+   * the given variable, if any exist (other than varname itself).
+   */
+  private void addVariableReplacementSuggestions(String varname, ArrayList<TabSuggestion> ret) {
+    Renaming renaming = _proof.getProofState().getTopEquation().getRenaming();
+    var x = renaming.getReplaceable(varname);
+    if (x == null) return;
+    for (String name : renaming.range()) {
+      if (name.equals(varname)) continue;
+      if (renaming.getReplaceable(name).queryType().equals(x.queryType())) {
+        ret.add(new TabSuggestion(name, "variable"));
+      }
+    }
+  }
+
+  /** Tab suggestions once "alter constraint" has been read. */
   private void addConstraintSuggestions(CommandParsingStatus status, ArrayList<TabSuggestion> ret) {
     if (status.commandEnded()) ret.add(new TabSuggestion(null, "constraint"));
     else {

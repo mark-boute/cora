@@ -239,7 +239,7 @@ public class ITrsParser extends FirstOrderParser implements Parser {
     if (vars == null) vars = LookupMap.<ParserDeclaration>empty();
     FixedList<ParserRule> rules = readRules(vars);
     if (!readComment()) _status.expect(Token.EOF, "end of input");
-    return new ParserProgram(LookupMap.<ParserDeclaration>empty(), rules);
+    return new ParserProgram(LookupMap.<ParserDeclaration>empty(), rules, TrsFormat.LCTRS);
   }
 
   // ====================================== PUBLIC FUNCTIONS ======================================
