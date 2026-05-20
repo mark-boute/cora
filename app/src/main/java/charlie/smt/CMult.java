@@ -14,7 +14,6 @@
  *************************************************************************************************/
 
 package charlie.smt;
-
 import java.util.Map;
 
 /** A multiplication by a constant */

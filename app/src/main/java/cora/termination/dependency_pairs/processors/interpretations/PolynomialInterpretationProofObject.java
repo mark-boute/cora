@@ -15,7 +15,7 @@
 
  package cora.termination.dependency_pairs.processors.interpretations;
 
-import java.util.Hashtable;
+import java.util.Map;
 import java.util.Set;
 
 import charlie.smt.Constraint;
@@ -34,9 +34,9 @@ public class PolynomialInterpretationProofObject extends ProcessorProofObject {
 
   private String _reason;
   private Boolean _success = false;
-  private Hashtable<FunctionSymbol, IntegerExpression> _costFunctions;
-  private Hashtable<Rule, Constraint> _ruleInterpretations;
-  private Hashtable<DP, Pair<IntegerExpression, IntegerExpression>> _DPInterpretations;
+  private Map<FunctionSymbol, IntegerExpression> _costFunctions;
+  private Map<Rule, Constraint> _ruleInterpretations;
+  private Map<DP, Pair<IntegerExpression, IntegerExpression>> _DPInterpretations;
 
   /**
    * A failed proof; SMT-Solver returned NO.
@@ -70,9 +70,9 @@ public class PolynomialInterpretationProofObject extends ProcessorProofObject {
   public PolynomialInterpretationProofObject(
       Problem input,
       Set<Integer> oriented,
-      Hashtable<FunctionSymbol, IntegerExpression> costFunctions,
-      Hashtable<Rule, Constraint> ruleInterpretations,
-      Hashtable<DP, Pair<IntegerExpression, IntegerExpression>> DPInterpretations) {
+      Map<FunctionSymbol, IntegerExpression> costFunctions,
+      Map<Rule, Constraint> ruleInterpretations,
+      Map<DP, Pair<IntegerExpression, IntegerExpression>> DPInterpretations) {
     super(input, input.removeDPs(oriented, true));
     _success = oriented != null && !oriented.isEmpty();
     _costFunctions = costFunctions;

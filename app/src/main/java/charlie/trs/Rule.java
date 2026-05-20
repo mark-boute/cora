@@ -15,7 +15,6 @@
 
 package charlie.trs;
 
-import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.LinkedList;

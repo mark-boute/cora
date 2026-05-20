@@ -17,7 +17,6 @@ package charlie.smt;
 
 import java.util.List;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.TreeSet;
 
 public final class Conjunction extends Junction {

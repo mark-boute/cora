@@ -15,36 +15,29 @@
 
  package cora.termination.dependency_pairs.processors.interpretations;
 
-import java.util.ArrayList;
-import java.util.Hashtable;
+// import java.util.HashMap;
 import java.util.List;
-import java.util.TreeSet;
-import java.util.Vector;
+// import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import charlie.smt.*;
-import charlie.smt.SmtSolver.Answer;
 import charlie.terms.FunctionSymbol;
-import charlie.terms.Variable;
-import charlie.trs.Rule;
 import charlie.trs.TrsProperties.Constrained;
 import charlie.trs.TrsProperties.FreshRight;
 import charlie.trs.TrsProperties.Level;
 import charlie.trs.TrsProperties.Lhs;
 import charlie.trs.TrsProperties.Root;
 import charlie.trs.TrsProperties.TypeLevel;
-import charlie.util.Pair;
 import cora.config.Settings;
 import cora.termination.dependency_pairs.Problem;
 import cora.termination.dependency_pairs.processors.Processor;
 import cora.termination.dependency_pairs.processors.ProcessorProofObject;
-import cora.termination.dependency_pairs.DP;
+// import cora.termination.dependency_pairs.DP;
 
 public class TupleInterpretationProcessor implements Processor {
 
-  private Hashtable<Rule, Pair<IntegerExpression, IntegerExpression>> _ruleInterpretations = new Hashtable<>();
-  private Hashtable<DP, Pair<IntegerExpression, IntegerExpression>> _dpInterpretations = new Hashtable<>();
-  private List<IVar> _allVariableIntegerExpressions = new ArrayList<>();
-  private Hashtable<DP, IVar> _dpReductionIndicators = new Hashtable<>();
+  private static final int TUPLE_SIZE = 2; 
 
   /**
    * Allow this processor to be disabled via settings.
@@ -80,174 +73,91 @@ public class TupleInterpretationProcessor implements Processor {
   @Override
   public ProcessorProofObject processDPP(Problem dpp) {
 
-    SmtProblem problem = new SmtProblem();
-    Hashtable<FunctionSymbol, Vector<IntegerExpression>> symbolArgumentWeights = new Hashtable<>();
+    // SmtProblem problem = new SmtProblem();
 
-    // Find all function symbols and create a cost function for them
-    for (FunctionSymbol symbol : dpp.getOriginalTRS().queryAlphabet().getSymbols()) {
-      if (symbol == null) throw new NullPointerException("FunctionSymbol is null");
-      if (symbolArgumentWeights.containsKey(symbol)) {
-        throw new IllegalStateException("Duplicate FunctionSymbol in TRS: " + symbol.queryName());
-      }
+    // Instead of a single polynomial interpretation, we create a tuple of interpretations for each function symbol.
+    // In order to combine this into a single SMT problem, we index the weight symbols.
+    // Map<FunctionSymbol, List<SymbolInterpretation>> functionInterpretations = dpp.getOriginalTRS()
+    //   .queryAlphabet().getSymbols().stream().collect(Collectors.toMap(
+    //     symbol -> symbol,
+    //     symbol -> this.createSymbolTupleInterpretation(symbol, problem)
+    //   ));
 
-      Vector<IntegerExpression> argumentWeights = new Vector<>();
-      for (int i = 0; i < symbol.queryArity() + 1; i++) {
-        argumentWeights.add(
-          SmtFactory.createIntegerVariable(problem, symbol.queryName() + "_w" + i, 0,10)
-        );
-      }
-      symbolArgumentWeights.put(symbol, argumentWeights);
-    }
+    // With this tuple of IntegerExpressions, we can create a tuple of interpretations for each rule and DP, which we can then combine into a single SMT problem.
 
-    // Create a generic cost function for each rewrite rule in the TRS
-    for (Rule rule : dpp.getOriginalTRS().queryRules()) {
-      Hashtable<Variable, IVar> variableIntegerExpressions = new Hashtable<>();
-      Hashtable<IntegerExpression, List<IntegerExpression>> variableCoefficients = new Hashtable<>();
+    // There are two distinctions we want to make between rules and DPs:
+    // 1. For rules we require a non-increasing interpretation.
+    // 2. For DPs we have two cases again: 
+    //    a. Strictly decreasing interpretation, which is how we remove a DP from the problem.
+    //    b. Non-increasing interpretation, which does not remove the DP, 
+    //       but allows us to remove this DP in a later iteration of the framework.
 
-      Pair<IntegerExpression, IntegerExpression> interpretationForRule = Interpretations.simplifiedIterpertationForRule(
-        rule.queryLeftSide(), rule.queryRightSide(), 
-        problem, symbolArgumentWeights, variableIntegerExpressions
-      );
-      _ruleInterpretations.put(rule, interpretationForRule);
+    // For cases 1 and 2b we require: forall f in T: f >= 0.        
+  
+    // Store all the interpretations for the rules, so we can justify the proof object later.
+    // Map<Rule, List<RuleInterpretation>> ruleInterpretations = dpp.getOriginalTRS()
+    //   .queryRules().stream()
+    //   .collect(Collectors.toMap(
+    //     rule -> rule,
+    //     rule -> IntStream.range(0, TUPLE_SIZE)
+    //       .mapToObj(i -> new RuleInterpretation(rule, mapFunctionInterpretationsToIndex(functionInterpretations, i)))
+    //       .collect(Collectors.toList())
+    //   ));
 
-      // Simplify lhsCost >= rhsCost to lhsCost - rhsCost >= 0
-      Addition lhsMinusRhs = (Addition) SmtFactory.createAddition(
-        interpretationForRule.left(),
-        SmtFactory.createNegation(interpretationForRule.right())
-      ).simplify();
+    // For case 2a we require: f_0 > 0, and forall f_i with i > 0: f_i >= 0
+    // We introduce an indicator variable for each DP, which is 0 if the DP is strictly decreasing, and 1 if the DP is non-increasing.
+    // We then require that at least one DP is strictly decreasing, which ensures that we make progress towards termination.
+    
+        /*
+       * for DPs we require at least >= 0, but in order to reduce towards termination
+       * we need > 0.
+       * We want to reduce as many DPs as possible in each step.
+       * Therefor we try to find as many strictly decreasing DPs as possible,
+       * in order to do this we rewrite forinstance a + bx + cy >= 0 to the form of:
+       * a-d + bx + cy >= 0, which is equivalent to a + bx + cy > 0 iff d=1.
+       * but SMT-s generaly try to stick to a value of 0, so we rewrite the constraint
+       * to:
+       * (a + 1 - d) + bx + cy, with for d=0 : `> 0`, and for d=1: `>= 0`,
+       * making sure the SMT levetates towards strictly decreasing interpretations.
+       */
 
-      Interpretations.combineTermsOnVariables(lhsMinusRhs, variableIntegerExpressions, variableCoefficients);
+    // Map<DP, IVar> dpIndicators = new HashMap<>();
 
-      _allVariableIntegerExpressions.addAll(variableIntegerExpressions.values());
+    // dpp.getDPList().stream()
+    //   .flatMap(dp -> interpretRule(dp.lhs(), dp.rhs(), functionInterpretations))
+    //   .map(expr -> {
+    //     IVar indicator = SmtFactory.createIntegerVariable(problem, dp.lhs().queryRoot() + "_red", 0, 1);
+    //     dpIndicators.put(dp, indicator);
+    //   }) // add indicator
+    //   .forEach(problem::require);
 
-      // Require that each rule has a non-increasing interpretation
-      variableCoefficients.forEach((variableExpr, coefficientExpr) -> {
-        problem.require(SmtFactory.createGeq(SmtFactory.createAddition(coefficientExpr)));
-      });
 
-    }
-
-    for (DP dp : dpp.getDPList()) {
-      Hashtable<Variable, IVar> variableIntegerExpressions = new Hashtable<>();
-      Hashtable<IntegerExpression, List<IntegerExpression>> variableCoefficients = new Hashtable<>();
-
-      Pair<IntegerExpression, IntegerExpression> interpretationForDP = Interpretations.simplifiedIterpertationForRule(
-        dp.lhs(), dp.rhs(), 
-        problem, symbolArgumentWeights, variableIntegerExpressions
-      );
-      _dpInterpretations.put(dp, interpretationForDP);
-
-      Addition lhsMinusRhs = (Addition) SmtFactory.createAddition(
-        interpretationForDP.left(),
-        SmtFactory.createNegation(interpretationForDP.right())
-      ).simplify();
-
-      Interpretations.combineTermsOnVariables(lhsMinusRhs, variableIntegerExpressions, variableCoefficients);
-
-      /*
-        for DPs we require at least >= 0, but in order to reduce towards termination we need > 0.
-        We want to reduce as many DPs as possible in each step.
-        Therefor we try to find as many strictly decreasing DPs as possible,
-        in order to do this we rewrite forinstance a + bx + cy >= 0 to the form of:
-        a-d + bx + cy >= 0, which is equivalent to a + bx + cy > 0 iff d=1.
-        but SMT-s generaly try to stick to a value of 0, so we rewrite the constraint to:
-        (a + 1 - d) + bx + cy, with for d=0 : `> 0`, and for d=1: `>= 0`, 
-        making sure the SMT levetates towards strictly decreasing interpretations.        
-      */
-      
-// TODO: improve to constant part end up being > 0.
-// This removes the need for an indicator.
-
-      IVar reductionIndicator = SmtFactory.createIntegerVariable(
-        problem, dp.lhs().queryRoot() + "_red", 0, 1
-      );
-      _dpReductionIndicators.put(dp, reductionIndicator);
-      
-      List<IntegerExpression> constants = variableCoefficients.getOrDefault(
-        SmtFactory.createValue(1), new ArrayList<>()
-      );
-
-      constants.add(SmtFactory.createAddition(SmtFactory.createValue(-1), reductionIndicator));
-      variableCoefficients.put(SmtFactory.createValue(1), constants);
-      
-      _allVariableIntegerExpressions.addAll(variableIntegerExpressions.values());
-      variableCoefficients.forEach((variableExpr, coefficientExpr) -> {
-        problem.require(SmtFactory.createGeq(SmtFactory.createAddition(coefficientExpr)));
-      });
-    }
-
-    // Require that at least one DP is strictly decreasing
-    problem.require(SmtFactory.createDisjunction(
-      _dpReductionIndicators.values().stream()
-        .map((indicator) -> SmtFactory.createGreater(SmtFactory.createValue(1), indicator))
-        .toList()
-    ));
-
-    return switch (Settings.smtSolver.checkSatisfiability(problem)) {
-      case Answer.YES(Valuation val) -> {
-
-        // Determine which DPs are oriented
-        TreeSet<Integer> indexOfOrientedDPs = new TreeSet<>();
-        for (int dpIndex = 0; dpIndex < dpp.getDPList().size(); dpIndex++) {
-          DP dp = dpp.getDPList().get(dpIndex);
-          if (val.queryAssignment(_dpReductionIndicators.get(dp)) == 0) {
-            indexOfOrientedDPs.add(dpIndex); 
-          }
-        }
-
-        Hashtable<IVar, IntegerExpression> weightAssignments = new Hashtable<>();
-        // For each function symbol, query and update the assigned weights
-        for (FunctionSymbol symbol : symbolArgumentWeights.keySet()) {
-          symbolArgumentWeights.computeIfPresent(symbol, (key, argumentWeights) -> {
-            Vector<IntegerExpression> evaluatedWeights = new Vector<>();
-            argumentWeights.forEach(weight -> {
-              IntegerExpression evaluatedWeight = SmtFactory.createValue(val.queryAssignment((IVar) weight));
-              evaluatedWeights.add(evaluatedWeight);
-              weightAssignments.put((IVar) weight, evaluatedWeight);
-            });
-            return evaluatedWeights;
-          });
-        }
-
-        Hashtable<Rule, Constraint> ruleInterpretations = new Hashtable<>();
-        _ruleInterpretations.forEach((rule, pair) -> {
-          ruleInterpretations.put(rule, SmtFactory.createGeq(
-            pair.left().substitute(weightAssignments).simplify(),
-            pair.right().substitute(weightAssignments).simplify()
-          ));
-        });
-      
-        Hashtable<DP, Pair<IntegerExpression, IntegerExpression>> dpInterpretations = new Hashtable<>();
-        _dpInterpretations.forEach((dp, pair) -> {
-          dpInterpretations.put(dp, new Pair<>(
-            pair.left().substitute(weightAssignments).simplify(),
-            pair.right().substitute(weightAssignments).simplify()
-          ));
-        });
-
-        Hashtable<FunctionSymbol, IntegerExpression> costFunctions = new Hashtable<>();
-        dpp.getOriginalTRS().queryAlphabet().getSymbols().forEach((functionSymbol) -> {
-          Vector<IntegerExpression> weights = symbolArgumentWeights.get(functionSymbol);
-          List<IntegerExpression> subterms = new ArrayList<>();
-          subterms.add(weights.getFirst()); // constant term
-          for (int argIndex = 0; argIndex < functionSymbol.queryArity(); argIndex++) {
-            subterms.add(SmtFactory.createMultiplication(
-              weights.get(argIndex + 1), 
-              SmtFactory.createIntegerVariable(problem, String.valueOf((char) ('a' + argIndex)), argIndex, argIndex)
-            ));
-          }
-          costFunctions.put(functionSymbol, SmtFactory.createAddition(subterms));
-        });
-
-        yield new PolynomialInterpretationProofObject(
-          dpp, indexOfOrientedDPs, costFunctions, 
-          ruleInterpretations, dpInterpretations
-        );
-      }
-
-      case Answer.MAYBE(String reason) -> new PolynomialInterpretationProofObject(dpp, reason);
-
-      case Answer.NO() -> new PolynomialInterpretationProofObject(dpp);
-    };
+    return null;
   }
+
+  /** 
+   * Helper function to create a tuple of SymbolInterpretations for a given function symbol, which we can then use to create interpretations for rules and DPs.
+   * @param symbol The function symbol to create the interpretations for.
+   * @param problem The SMT problem to create the integer variables in.
+   * @return A tuple of SymbolInterpretations for the given function symbol.
+   */
+  // private List<SymbolInterpretation> createSymbolTupleInterpretation(FunctionSymbol symbol, SmtProblem problem) {
+  //   return IntStream.range(0, TUPLE_SIZE)
+  //     .mapToObj(i -> new SymbolInterpretation(problem, symbol, "t" + i + "_"))
+  //     .collect(Collectors.toList());
+  // }
+
+  // private Map<FunctionSymbol, SymbolInterpretation> mapFunctionInterpretationsToIndex(
+  //     Map<FunctionSymbol, List<SymbolInterpretation>> functionInterpretations, int index) {
+    
+  //   if (index < 0 || index >= TUPLE_SIZE) {
+  //     throw new IllegalArgumentException("Index must be between 0 and " + (TUPLE_SIZE - 1));
+  //   }
+    
+  //   return functionInterpretations.entrySet().stream()
+  //     .collect(Collectors.toMap(
+  //       Map.Entry::getKey,
+  //       entry -> entry.getValue().get(index)
+  //     ));
+  // }
 }

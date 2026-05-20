@@ -18,6 +18,7 @@ package charlie.smt;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Map;
+
 import java.util.List;
 
 public final class Multiplication extends IntegerExpression {
@@ -71,7 +72,7 @@ public final class Multiplication extends IntegerExpression {
     }
     return new Multiplication(newChildren);
   }
-
+  
   public int evaluate(Valuation val) {
     int ret = 1;
     for (int i = 0; i < _children.size() && ret != 0; i++) ret *= _children.get(i).evaluate(val);
