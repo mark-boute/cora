@@ -1,4 +1,4 @@
-package cora.termination.dependency_pairs.processors.interpretations;
+package cora.termination.dependency_pairs.processors.interpretations.polynomial;
 
 import java.util.List;
 import java.util.Map;

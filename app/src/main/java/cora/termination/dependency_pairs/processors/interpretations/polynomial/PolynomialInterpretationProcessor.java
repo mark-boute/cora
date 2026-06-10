@@ -1,5 +1,5 @@
 // 
-package cora.termination.dependency_pairs.processors.interpretations;
+package cora.termination.dependency_pairs.processors.interpretations.polynomial;
 
 import java.util.HashMap;
 import java.util.List;
@@ -144,7 +144,7 @@ public class PolynomialInterpretationProcessor implements Processor {
     Valuation val
   ) {
     Map<IVar, IntegerExpression> weightAssignments = new HashMap<>();
-    interpretations.forEach(si -> si.getCoefficients().forEach(weight -> {
+    interpretations.forEach(si -> si.getLinearCoefficients().forEach(weight -> {
       if (weight instanceof IVar var) {
         weightAssignments.put(var, SmtFactory.createValue(val.queryAssignment(var)));
       }
@@ -181,7 +181,7 @@ public class PolynomialInterpretationProcessor implements Processor {
   ) {
     return functionInterpretations.entrySet().stream().collect(Collectors.toMap(
       Map.Entry::getKey,
-      entry -> entry.getValue().queryCostFunction().substitute(weightAssignments)
+      entry -> entry.getValue().queryLinearCostFunction().substitute(weightAssignments)
     ));
   }
 }

@@ -1,4 +1,4 @@
-package cora.termination.dependency_pairs.processors.interpretations;
+package cora.termination.dependency_pairs.processors.interpretations.polynomial;
 
 import java.util.HashMap;
 import java.util.List;
@@ -56,8 +56,7 @@ protected RuleInterpretation(Pair<List<IVar>, List<IntegerExpression>> interpret
    * A helper function for using absolute positiveness in tuple interpretations.
    * Splits an addition into a list of IntegerExpressions that do not contain
    * variables.
-   * e.g. for an addition c + abXY + dY, where XY and Y are variables in
-   * variableIntegerExpressions,
+   * e.g. for an addition c + abXY + dY, where XY and Y are variables in variableIntegerExpressions,
    * this method will return the map [1:c, XY:ab, Y:d].
    * @return A map from variable terms to their coefficient IntegerExpressions, and a separate entry for the constant part (with key multIdentity).
    */
@@ -132,13 +131,6 @@ protected RuleInterpretation(Pair<List<IVar>, List<IntegerExpression>> interpret
     return coefficientsMap;
   }
 
-  public Pair<IntegerExpression, IntegerExpression> substitution(Map<IVar, IntegerExpression> variableAssignments) {
-    return new Pair<>(
-      _leftSideInterpretation.substitute(variableAssignments).simplify(),
-      _rightSideInterpretation.substitute(variableAssignments).simplify()
-    );
-  }
-
   private void addCoefficient(Map<IntegerExpression, IntegerExpression> map, IntegerExpression key, IntegerExpression valueToAdd) {
     map.compute(key, (k, existingCoeff) -> 
         (existingCoeff == null) 
@@ -156,5 +148,12 @@ protected RuleInterpretation(Pair<List<IVar>, List<IntegerExpression>> interpret
       .collect(Collectors.partitioningBy(condition));
 
     return new Pair<>(partitioned.get(true), partitioned.get(false));
+  }
+
+    public Pair<IntegerExpression, IntegerExpression> substitution(Map<IVar, IntegerExpression> variableAssignments) {
+    return new Pair<>(
+      _leftSideInterpretation.substitute(variableAssignments).simplify(),
+      _rightSideInterpretation.substitute(variableAssignments).simplify()
+    );
   }
 }

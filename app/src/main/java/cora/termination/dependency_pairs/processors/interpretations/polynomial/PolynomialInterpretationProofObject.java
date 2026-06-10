@@ -13,10 +13,12 @@
  See the License for the specific language governing permissions and limitations under the License.
  *************************************************************************************************/
 
- package cora.termination.dependency_pairs.processors.interpretations;
+ package cora.termination.dependency_pairs.processors.interpretations.polynomial;
 
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import charlie.smt.Constraint;
 import charlie.smt.ConstraintPrinter;
@@ -104,10 +106,15 @@ public class PolynomialInterpretationProofObject extends ProcessorProofObject {
     module.println("Cost functions for function symbols:");
 
     module.startTable();
+
     _costFunctions.forEach((term, expr) -> {
-      module.nextColumn("J(%a)", term);
+      String variables = IntStream.rangeClosed(1, term.queryArity())
+                          .mapToObj(i -> "x" + i)
+                          .collect(Collectors.joining(", ", "(", ")"));
+
+      module.nextColumn("J(%a)" + variables, term);
       module.nextColumn("=");
-      module.println(iExpPrinter.print(expr));
+      module.println(iExpPrinter.print(expr.simplify()));
     });
 
     module.endTable();
@@ -117,7 +124,7 @@ public class PolynomialInterpretationProofObject extends ProcessorProofObject {
     _ruleInterpretations.forEach((rule, constraint) -> {
       module.print("Rule '%a' was oriented using: ", rule);
       module.print("[[%a]] >= [[%a]]", rule.queryLeftSide(), rule.queryRightSide());
-      module.println(", interpreted as %a", constraintPrinter.print(constraint));
+      module.println(", \n\t interpreted as %a", constraintPrinter.print(constraint));
     });
 
     if (!_output.isEmpty()) {
@@ -129,7 +136,6 @@ public class PolynomialInterpretationProofObject extends ProcessorProofObject {
         module.print(" with\n");
         module.println("\t%a >= %a", iExpPrinter.print(_DPInterpretations.get(dp).left()), iExpPrinter.print(_DPInterpretations.get(dp).right()));
       });
-
     }
 
     module.println("The following Dependency Pairs were oriented and have been removed from the problem.");

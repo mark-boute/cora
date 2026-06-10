@@ -20,8 +20,8 @@ import cora.termination.reduction_pairs.horpo.Horpo;
 import cora.termination.dependency_pairs.processors.*;
 import cora.termination.dependency_pairs.processors.graph.GraphProcessor;
 import cora.termination.dependency_pairs.processors.graph.ReachabilityProcessor;
-import cora.termination.dependency_pairs.processors.interpretations.TupleInterpretationProcessor;
-import cora.termination.dependency_pairs.processors.interpretations.PolynomialInterpretationProcessor;
+import cora.termination.dependency_pairs.processors.interpretations.polynomial.PolynomialInterpretationProcessor;
+import cora.termination.dependency_pairs.processors.interpretations.tuple.TupleInterpretationProcessor;
 import cora.termination.dependency_pairs.processors.redpair.ReductionPairProcessor;
 
 public class FullDPFramework extends DPFramework {
@@ -39,8 +39,8 @@ public class FullDPFramework extends DPFramework {
   public FullDPFramework(TRS trs, boolean extraRules) {
     super(trs, false, extraRules);
     _processors = new Processor[] {
-        // new TupleInterpretationProcessor(),
-        new PolynomialInterpretationProcessor(),
+        new TupleInterpretationProcessor(),
+        // new PolynomialInterpretationProcessor(),
         // new SplittingProcessor(),
         // new TheoryArgumentsProcessor(true),
         // new ReachabilityProcessor(),
