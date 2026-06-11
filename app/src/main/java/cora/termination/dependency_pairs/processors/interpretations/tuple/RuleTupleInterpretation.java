@@ -2,8 +2,11 @@ package cora.termination.dependency_pairs.processors.interpretations.tuple;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -46,16 +49,47 @@ public class RuleTupleInterpretation {
     this(problem, rule.queryLeftSide(), rule.queryRightSide(), symbolInterpretations);
   }
 
-  public void requireWeaklyDecreasing() {
-    // All IVars assigned to rule variables are the "parameters" —
-    // the unknowns whose coefficients must be proven non-negative.
-    List<IVar> parameterVariables = _variableMap.values().stream()
-      .flatMap(List::stream)
-      .collect(Collectors.toList());
+  // public void requireWeaklyDecreasing() {
+  //   // All IVars assigned to rule variables are the "parameters" —
+  //   // the unknowns whose coefficients must be proven non-negative.
+  //   List<IVar> parameterVariables = _variableMap.values().stream()
+  //     .flatMap(List::stream)
+  //     .collect(Collectors.toList());
 
-    System.out.println("For rule: " + _left + " -> " + _right + "\n");
+  //   System.out.println("For rule: " + _left + " -> " + _right + "\n");
+
+  //   for (int i = 0; i < _leftSideInterpretation.size(); i++) {
+  //     System.out.println("\nComparing tuple element " + (i + 1) + ":");
+  //     System.out.println(_leftSideInterpretation.get(i));
+  //     System.out.println(">=");
+  //     System.out.println(_rightSideInterpretation.get(i));
+
+  //     IntegerExpression diff = SmtFactory.createAddition(
+  //       _leftSideInterpretation.get(i),
+  //       SmtFactory.createNegation(_rightSideInterpretation.get(i))
+  //     ).simplify();
+
+  //     System.out.println("\nSimplifies to:\n" + diff + "\n\n With requirements:\n");
+
+  //     RuleTupleInterpretation.combineTermsOnParameterVariables(diff, parameterVariables)
+  //         .values().stream()
+  //         .map(SmtFactory::createGeq)
+  //         .forEach(_problem::require);
+
+  //     RuleTupleInterpretation.combineTermsOnParameterVariables(diff, parameterVariables)
+  //         .values().stream()
+  //         .map(SmtFactory::createGeq)
+  //         .forEach(System.out::println);
+  //   }
+  // }
+
+  public void requireWeaklyDecreasing() {
+    List<IVar> parameterVariables = _variableMap.values().stream()
+        .flatMap(List::stream)
+        .collect(Collectors.toList());
 
     for (int i = 0; i < _leftSideInterpretation.size(); i++) {
+
       System.out.println("\nComparing tuple element " + (i + 1) + ":");
       System.out.println(_leftSideInterpretation.get(i));
       System.out.println(">=");
@@ -68,17 +102,13 @@ public class RuleTupleInterpretation {
 
       System.out.println("\nSimplifies to:\n" + diff + "\n\n With requirements:\n");
 
-      RuleTupleInterpretation.combineTermsOnParameterVariables(diff, parameterVariables)
-          .values().stream()
-          .map(SmtFactory::createGeq)
-          .forEach(_problem::require);
+      Map<IntegerExpression, IntegerExpression> coeffMap =
+        combineTermsOnParameterVariables(diff, parameterVariables);
 
-      RuleTupleInterpretation.combineTermsOnParameterVariables(diff, parameterVariables)
-          .values().stream()
-          .map(SmtFactory::createGeq)
-          .forEach(System.out::println);
+      requireCoupledConstraints(coeffMap, parameterVariables);
     }
   }
+
 
   public List<IntegerExpression> getLeftSideInterpretation() {
     return _leftSideInterpretation;
@@ -196,9 +226,8 @@ public class RuleTupleInterpretation {
 
   private static void addCoefficient(Map<IntegerExpression, IntegerExpression> map, IntegerExpression key, IntegerExpression valueToAdd) {
     map.compute(key, (k, existingCoeff) -> 
-        (existingCoeff == null) 
-            ? valueToAdd 
-            : SmtFactory.createAddition(existingCoeff, valueToAdd).simplify()
+        (existingCoeff == null) ? valueToAdd 
+                                : SmtFactory.createAddition(existingCoeff, valueToAdd).simplify()
     );
   }
 
@@ -213,6 +242,60 @@ public class RuleTupleInterpretation {
     return new Pair<>(partitioned.get(true), partitioned.get(false));
   }
 
+  private void requireCoupledConstraints(Map<IntegerExpression, IntegerExpression> coeffMap, List<IVar> parameterVariables) {
+
+    Set<IntegerExpression> absorbed = new HashSet<>();
+
+    for (IVar v : parameterVariables) {
+      IntegerExpression linearCoeff = coeffMap.get(v);
+      if (linearCoeff == null) continue;
+
+      Optional<Map.Entry<IntegerExpression, IntegerExpression>> squaredEntry =
+        coeffMap.entrySet().stream()
+                .filter(e -> isSquareOf(e.getKey(), v))
+                .findFirst();
+
+      // check if we have cx^2 + dx, and if so, require c >= 0 and c + d >= 0
+      if (squaredEntry.isPresent()) {
+        IntegerExpression c = squaredEntry.get().getValue();
+        IntegerExpression d = linearCoeff;
+
+        // c >= 0
+        _problem.require(SmtFactory.createGeq(c));
+        // c + d >= 0  (the coupled constraint)
+        _problem.require(SmtFactory.createGeq(
+            SmtFactory.createAddition(c, d).simplify()));
+
+        // For debugging: print out the coupled constraints
+        System.out.println("Coupled constraints for variable " + v + ":");
+        System.out.println("  " + c + " >= 0");
+        System.out.println("  " + c + " + " + d + " >= 0");
+
+        absorbed.add(v);
+        absorbed.add(squaredEntry.get().getKey());
+      }
+    }
+
+    // Everything not absorbed gets the standard treatment
+    coeffMap.entrySet().stream()
+        .filter(e -> !absorbed.contains(e.getKey()))
+        .map(Map.Entry::getValue)
+        .map(SmtFactory::createGeq)
+        .forEach(_problem::require);
+
+    // For debugging: print out any remaining constraints
+    coeffMap.entrySet().stream()
+        .filter(e -> !absorbed.contains(e.getKey()))
+        .forEach(e -> System.out.println("Remaining constraint: " + e.getValue() + " >= 0"));
+}
+
+// Reference equality on IVar is intentional: these are the exact same
+// objects placed in the expression by interpretTerm
+private static boolean isSquareOf(IntegerExpression expr, IVar v) {
+    if (!(expr instanceof Multiplication mult)) return false;
+    if (mult.numChildren() != 2) return false;
+    return mult.queryChild(1) == v && mult.queryChild(2) == v;
+}
     // public Pair<IntegerExpression, IntegerExpression> substitution(Map<IVar, IntegerExpression> variableAssignments) {
     // return new Pair<>(
     //   _leftSideInterpretation.substitute(variableAssignments).simplify(),
