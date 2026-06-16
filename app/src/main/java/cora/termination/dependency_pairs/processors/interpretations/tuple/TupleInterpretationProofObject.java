@@ -3,6 +3,8 @@ package cora.termination.dependency_pairs.processors.interpretations.tuple;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -31,6 +33,7 @@ public class TupleInterpretationProofObject extends ProcessorProofObject {
    */
   protected TupleInterpretationProofObject(Problem input) {
     super(input);
+    System.out.println("No tuple interpretation exists for this problem.");
   }
 
   /**
@@ -43,6 +46,7 @@ public class TupleInterpretationProofObject extends ProcessorProofObject {
   public TupleInterpretationProofObject(Problem input, String reason) {
     super(input);
     _reason = reason;
+    System.out.println("The SMT-Solver returned MAYBE with reason: " + reason);
   }
 
   public TupleInterpretationProofObject(
@@ -116,9 +120,7 @@ public class TupleInterpretationProofObject extends ProcessorProofObject {
   private void printRuleInterpretations(OutputModule module) {
     _ruleInterpretations.forEach((rule, interpretation) -> {
       module.println("%a is interpreted as [[%a]] >= [[%a]], or: ", rule, rule.queryLeftSide(), rule.queryRightSide());
-      this.printTuple(module, interpretation.left());
-      module.print(">= ");
-      this.printTuple(module, interpretation.right());
+      printComparison(module, interpretation.left(), interpretation.right(), ">=");
     });
   }
 
@@ -128,27 +130,64 @@ public class TupleInterpretationProofObject extends ProcessorProofObject {
         .forEach(entry -> {
           DP dp = entry.getKey();
           Pair<List<String>, List<String>> interpretation = entry.getValue();
-
           String comparison = oriented ? ">" : ">=";
-
           module.println("%a → %a is interpreted as [[%a]] %a [[%a]], or: ",
               dp.rhs(), dp.lhs(), dp.lhs(), comparison, dp.rhs());
-
-          this.printTuple(module, interpretation.left());
-          module.print(comparison + " ");
-          this.printTuple(module, interpretation.right());
+          printComparison(module, interpretation.left(), interpretation.right(), comparison);
         });
+  }
 
+  private static final Pattern REPEATED_FACTOR = Pattern.compile("(\\w+)( \\* \\1)+");
+
+  private static final Pattern VAR_NAME = Pattern.compile("\\w+_\\w+");
+
+  private String pretty(String s) {
+    s = s.replaceAll("\\[([^\\]]+)\\]", "$1");  // strip IVar brackets: [x1_1] → x1_1
+    // Collapse x * x * ... * x → [x^n]  (one pass, any degree)
+    Matcher m = REPEATED_FACTOR.matcher(s);
+    StringBuffer sb = new StringBuffer();
+    while (m.find()) {
+      String var = m.group(1);
+      int count = 1 + (m.group(0).length() - var.length()) / (" * " + var).length();
+      String power = count == 1 ? var : var + "^" + count;
+      m.appendReplacement(sb, Matcher.quoteReplacement("[" + power + "]"));
+    }
+    m.appendTail(sb);
+    final String collapsed = sb.toString();
+    // Re-bracket bare variable names (contain underscore, were not part of a repeated group)
+    return VAR_NAME.matcher(collapsed).replaceAll(r -> {
+      int start = r.start();
+      if (start > 0 && collapsed.charAt(start - 1) == '[') return r.group();
+      return "[" + r.group() + "]";
+    });
+  }
+
+  private String tupleInline(List<String> tuple) {
+    return tuple.stream().map(this::pretty).collect(Collectors.joining(", ", "❬", "❭"));
+  }
+
+  private void printComparison(OutputModule module, List<String> left, List<String> right, String op) {
+    String leftStr = tupleInline(left);
+    String rightStr = tupleInline(right);
+    if ((leftStr + " " + op + " " + rightStr).length() < 80) {
+      module.println(leftStr + " " + op + " " + rightStr);
+    } else {
+      printTuple(module, left, leftStr);
+      module.print(op + " ");
+      printTuple(module, right, rightStr);
+    }
   }
 
   private void printTuple(OutputModule module, List<String> tuple) {
-    // if sum of length of string < 80, print in one line. Otherwise, print in
-    // multiple lines.
-    String tupleString = tuple.stream().collect(Collectors.joining(", ", "❬", "❭"));
-    if (tupleString.length() < 80) {
-      module.println(tupleString);
+    printTuple(module, tuple, tupleInline(tuple));
+  }
+
+  private void printTuple(OutputModule module, List<String> tuple, String inline) {
+    if (inline.length() < 80) {
+      module.println(inline);
     } else {
-      module.println(tuple.stream().collect(Collectors.joining(",\n\t", "❬\n\t", "\n❭")));
+      module.println(tuple.stream().map(this::pretty)
+          .collect(Collectors.joining(",\n\t", "❬\n\t", "\n❭")));
     }
   }
 

@@ -97,6 +97,8 @@ public class TupleInterpretationProcessor implements Processor {
     // PolynomialPart.SQUARED)
     );
 
+    System.out.println("Mapping Symbols");
+
     /**
      * Create a tuple interpretation for each function symbol to reuse the
      * coefficients.
@@ -108,6 +110,8 @@ public class TupleInterpretationProcessor implements Processor {
         .collect(Collectors.toMap(
             symbol -> symbol,
             symbol -> new SymbolTupleInterpretation.Builder(problem, symbol, config).build()));
+
+    System.out.println("Mapping Rules");    
 
     /**
      * Interpret each rule using the symbol tuple interpretations.
@@ -121,6 +125,8 @@ public class TupleInterpretationProcessor implements Processor {
             rule -> rule,
             rule -> new RuleTupleInterpretation(problem, rule, symbolTupleInterpretations)));
     ruleTupleInterpretations.values().forEach(RuleTupleInterpretation::requireWeaklyDecreasing);
+
+    System.out.println("Mapping DPs");
 
     /**
      * Similarly, interpret each dependency pair using the symbol tuple
