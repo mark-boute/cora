@@ -24,6 +24,7 @@ import charlie.trs.TrsProperties.Lhs;
 import charlie.trs.TrsProperties.Root;
 import charlie.trs.TrsProperties.TypeLevel;
 import charlie.util.Pair;
+
 import cora.config.Settings;
 import cora.termination.dependency_pairs.DP;
 import cora.termination.dependency_pairs.Problem;

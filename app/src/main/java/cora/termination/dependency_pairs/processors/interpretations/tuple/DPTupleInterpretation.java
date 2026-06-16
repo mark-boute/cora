@@ -6,11 +6,11 @@ import charlie.smt.IVar;
 import charlie.smt.SmtFactory;
 import charlie.smt.SmtProblem;
 import charlie.terms.FunctionSymbol;
-
 import cora.termination.dependency_pairs.DP;
 
 public class DPTupleInterpretation extends RuleTupleInterpretation {
   private final IVar _reductionIndicator;
+  private boolean _oriented = false;
 
   public DPTupleInterpretation(SmtProblem problem, DP dp,
       Map<FunctionSymbol, SymbolTupleInterpretation> symbolInterpretations) {
@@ -23,4 +23,17 @@ public class DPTupleInterpretation extends RuleTupleInterpretation {
     return _reductionIndicator;
   }
 
+  @Override
+  public void requireWeaklyDecreasing() {
+    super.addReductionIndicator(_reductionIndicator);
+    super.requireWeaklyDecreasing();
+  }
+
+  public void setOriented(boolean oriented) {
+    _oriented = oriented;
+  }
+
+  public boolean isOriented() {
+    return _oriented;
+  }
 }

@@ -143,6 +143,12 @@ public class SmtFactory {
     return new Geq0(left, new Addition(new IValue(1), right));
   }
 
+  /** Creates left > 0 */
+  public static Constraint createGreater(IntegerExpression left) {
+    if (left == null) throw new NullStorageException("Geq", "left argument");
+    return new Geq0(left, new IValue(1));
+  }
+
   public static Constraint createSmaller(IntegerExpression left, IntegerExpression right) {
     if (left == null) throw new NullStorageException("Greater", "reversed right argument");
     if (right == null) throw new NullStorageException("Greater", "reversed left argument");

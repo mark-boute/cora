@@ -15,12 +15,6 @@ BENCHMARKS=(
     "# SRS_Standard:../TPDB-ARI/SRS_Standard"
 )
 
-# List of folders you already completed, exclude them using:
-# benchmark_name/subfolder_name (e.g., TRS_Standard/AG01)
-SKIPPED_FOLDERS="
-
-"
-
 for entry in "${BENCHMARKS[@]}"; do
     HEADER="${entry%%:*}"
     BASE_DIR="${entry#*:}"
@@ -39,10 +33,6 @@ for entry in "${BENCHMARKS[@]}"; do
 
     for subfolder_path in $(ls -d "$BASE_DIR"/*/ 2>/dev/null | sort); do
         subfolder=$(basename "$subfolder_path")
-        if echo "$SKIPPED_FOLDERS" | grep -Fqx "$current_target"; then
-            echo "  Skipping already completed folder: $current_target"
-            continue
-        fi
 
         if grep -q "^- $PARENT_DIR/$subfolder" "$RESULTS_FILE"; then
             echo "  Skipping (already found in results.txt): $PARENT_DIR/$subfolder"
@@ -51,7 +41,19 @@ for entry in "${BENCHMARKS[@]}"; do
 
         echo "  Running: $PARENT_DIR/$subfolder"
 
-        raw_output=$("$RUN_SCRIPT" --all "$subfolder_path" 2>&1)
+        # ----------------------------------------------------------------------
+        # FIXED SECTION: Use a temporary file to capture output in real-time
+        # ----------------------------------------------------------------------
+        TMP_OUT=$(mktemp)
+        
+        # This executes the script, displays progress live on screen, 
+        # and streams everything else directly into the temporary file.
+        "$RUN_SCRIPT" --all "$subfolder_path" > "$TMP_OUT" 2>&1
+        
+        raw_output=$(cat "$TMP_OUT")
+        rm -f "$TMP_OUT"
+        # ----------------------------------------------------------------------
+
         counts_line=$(echo "$raw_output" | tail -n 1 | xargs)        
         formatted_counts=$(echo "$counts_line" | awk '{print $1 " / " $2 " / " $3}')
         

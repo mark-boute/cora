@@ -51,5 +51,6 @@ tasks {
 
     named<JavaExec>("run") {
         standardInput = System.`in`
+        jvmArgs = listOf("-Xmx8g", "-Xms4g", "-XX:+UseG1GC")
     }
 }

@@ -158,6 +158,24 @@ public class Problem {
   }
 
   /**
+   * This function creates a copy of the current Problem with the given dependency pairs removed.
+   * In addition, if emptyPrivates is set to true, then the new Problem will have an empty set of
+   * private dependency pairs; if it is set to false, then a remaining DP is private in the new
+   * problem if and only if it is private in the old problem.
+   */
+  public Problem removeDPsByValue(Set<DP> remove, boolean emptyPrivates) {
+    List<DP> newList = new ArrayList<DP>();
+    Set<Integer> newPriv = new TreeSet<Integer>();
+    for (int i = 0; i < _dps.size(); i++) {
+      if (remove.contains(_dps.get(i))) continue;
+      if (!emptyPrivates && _privateIndexes.contains(i)) newPriv.add(newList.size());
+      newList.add(_dps.get(i));
+    }
+    return new Problem(newList, _rules, newPriv, _originalTrs, _innermost, _extraRules,
+                       _terminationFlag);
+  }
+
+  /**
    * Creates a default string representation for debugging purposes. This should never be printed
    * to the user!  Use an OutputModule for that.
    */
